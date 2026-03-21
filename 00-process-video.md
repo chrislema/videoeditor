@@ -85,10 +85,12 @@ After completion, report:
 - Number of zoom sections and label distribution
 - Confirm all 6 steps completed
 
-### Cleanup
-
-Do NOT delete intermediate files automatically. The user may want to review or re-run individual steps. Only delete intermediates if the user explicitly asks.
+#### Step 7: Clean Artifacts (`/clean-artifacts`)
+- Delete intermediate files: `_trimmed`, `_trimmed_sections.json`, `_zoomed`, `_colorcorrected`, `_mastered`, `_captioned`
+- Keep only the original `<name>.<ext>` and `<name>_final.mp4`
+- Report number of files deleted and disk space recovered
+- No confirmation needed when called from this pipeline
 
 ### Error handling
 
-If any step fails, stop the pipeline and report which step failed and why. Do not continue to subsequent steps.
+If any step fails, stop the pipeline and report which step failed and why. Do not continue to subsequent steps. Do not run cleanup if the pipeline failed.
