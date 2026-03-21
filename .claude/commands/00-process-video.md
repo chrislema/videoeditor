@@ -20,10 +20,10 @@ Example: `/process-video testvideo.mp4`
 
 ### Prerequisites
 - `ffmpeg` (standard) for steps 1-5
-- `ffmpeg-full` at `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` for step 6 (captions)
+- `ffmpeg` at `/opt/homebrew/opt/ffmpeg/bin/ffmpeg` for step 6 (captions, via homebrew-ffmpeg tap with drawtext support)
 - `whisper-cli` with model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
 - `opencv-python-headless` (pip)
-- Big Shoulders Display Bold 700 font at `/Users/chrislema/Library/Fonts/BigShouldersDisplay-700.ttf`
+- Big Shoulders Display Bold 700 font at `/Users/chrislema/Library/Fonts/BigShouldersDisplay-Bold.ttf`
 
 ### Pipeline
 
@@ -71,8 +71,8 @@ Given input `<name>.<ext>`:
 - Transcribe with whisper-cli
 - Break into max 6 words per caption, ALL CAPS
 - Big Shoulders Display Bold 700, white text on black box (70% opacity)
-- Font size: `width * 0.062`, centered at `height * 0.80`
-- **Must use ffmpeg-full** for drawtext filter
+- Font size: `width * 0.0495` (~190px at 4K), centered at `height * 0.80`, max 80% of video width
+- **Must use homebrew-ffmpeg tap** (`/opt/homebrew/opt/ffmpeg/bin/ffmpeg`) for drawtext filter
 - Output as `_final.mp4` (always mp4 regardless of input format)
 
 ### Output

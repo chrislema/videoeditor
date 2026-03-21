@@ -15,14 +15,14 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 ### Prerequisites
 - `ffmpeg` must be installed with drawtext/libfreetype support (via `homebrew-ffmpeg/ffmpeg` tap)
 - `whisper-cli` must be installed with a model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
-- Big Shoulders Display Bold 700 font at `/Users/chrislema/Library/Fonts/BigShouldersDisplay-700.ttf`
+- Big Shoulders Display Bold 700 font at `/Users/chrislema/Library/Fonts/BigShouldersDisplay-Bold.ttf` (static weight 700 from Google Fonts CDN: `https://fonts.gstatic.com/s/bigshouldersdisplay/v24/fC1MPZJEZG-e9gHhdI4-NBbfd2ys3SjJCx12wPgf9g-_3F0YdWg8JF4.ttf`)
 
 ### Parameters
 The user may optionally specify:
 - **input**: Path to the video file (if not provided, ask)
 - **output**: Path for the output file (default: `<input_basename>_captioned.<ext>`)
 - **max_words**: Maximum words per caption line (default: 6)
-- **target_width**: Target percentage of video width for text (default: 70%)
+- **target_width**: Target percentage of video width for text (default: 80%)
 - **box_opacity**: Opacity of the black background box, 0.0-1.0 (default: 0.70, meaning 30% transparent)
 
 ### Process
@@ -54,10 +54,10 @@ Parse the `[HH:MM:SS.mmm --> HH:MM:SS.mmm] text` lines from output.
 
 #### Step 4: Calculate font size
 
-For 70% width target with Big Shoulders Display Bold at max 6 words:
+For 80% width target with Big Shoulders Display Bold at max 6 words:
 
 ```python
-font_size = int(width * 0.062)  # ~238px at 3840px width
+font_size = int(width * 0.0495)  # ~190px at 3840px width, fits longest 6-word caption within 80% width
 box_padding = int(font_size * 0.07)
 y_position = int(height * 0.80)
 ```
@@ -116,12 +116,12 @@ ffmpeg -y -i <input> \
 - **Background**: Black box at 70% opacity (30% transparent), sized to fit the text
 - **Position**: Centered horizontally, at 80% of video height
 - **Max words per line**: 6
-- **Target width**: ~70% of video width
+- **Target width**: ~80% of video width
 
 ### Adjustments
 
 **Bigger/smaller text:**
-- Adjust the `width * 0.062` multiplier. Higher = bigger text.
+- Adjust the `width * 0.0495` multiplier. Higher = bigger text.
 
 **More/fewer words per line:**
 - Change max_words. Fewer words = bigger text per word, more frequent changes.
