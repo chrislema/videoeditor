@@ -14,9 +14,16 @@ Use this skill when the user wants to run the full video editing pipeline on a r
 
 ### Input
 
-The user provides a filename as an argument. If no filename is provided, ask for one. The file should be in the current working directory or an absolute path.
+The user provides a filename as an argument, optionally followed by `-HD` or `-4K` to set output resolution. If no filename is provided, ask for one. The file should be in the current working directory or an absolute path.
 
-Example: `/process-video testvideo.mp4`
+- `-HD` (default): Final output scaled to 1920x1080
+- `-4K`: Final output keeps source resolution (up to 3840x2160)
+- If no flag is provided, defaults to `-HD`
+
+Examples:
+- `/process-video testvideo.mp4` → HD output (1920x1080)
+- `/process-video testvideo.mp4 -HD` → HD output (1920x1080)
+- `/process-video testvideo.mp4 -4K` → 4K output (source resolution)
 
 ### Prerequisites
 - `ffmpeg` (standard) for steps 1-5
@@ -68,10 +75,12 @@ Given input `<name>.<ext>`:
 #### Step 6: Add Captions (`/add-captions`)
 - **Input**: `<name>_mastered.<ext>`
 - **Output**: `<name>_final.mp4`
+- **Resolution**: Pass the resolution flag (`-HD` or `-4K`) to this step. Default is `-HD` (1920x1080).
 - Transcribe with whisper-cli
 - Break into max 6 words per caption, ALL CAPS
 - Big Shoulders Display Bold 700, white text on black box (70% opacity)
-- Font size: `width * 0.0495` (~190px at 4K), centered at `height * 0.80`, max 80% of video width
+- Font size calculated from **target** dimensions (not source): `target_width * 0.0495`, centered at `target_height * 0.80`
+- If downscaling, prepend `scale=1920:1080` to the filter chain before drawtext filters
 - **Must use homebrew-ffmpeg tap** (`/opt/homebrew/opt/ffmpeg/bin/ffmpeg`) for drawtext filter
 - Output as `_final.mp4` (always mp4 regardless of input format)
 

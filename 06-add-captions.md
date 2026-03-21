@@ -21,6 +21,7 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 The user may optionally specify:
 - **input**: Path to the video file (if not provided, ask)
 - **output**: Path for the output file (default: `<input_basename>_captioned.<ext>`)
+- **resolution**: `-HD` (1920x1080) or `-4K` (keep source). Default: `-HD`
 - **max_words**: Maximum words per caption line (default: 6)
 - **target_width**: Target percentage of video width for text (default: 80%)
 - **box_opacity**: Opacity of the black background box, 0.0-1.0 (default: 0.70, meaning 30% transparent)
@@ -52,14 +53,21 @@ Parse the `[HH:MM:SS.mmm --> HH:MM:SS.mmm] text` lines from output.
 - Distribute the segment's time evenly across its chunks
 - Each chunk becomes a separate caption event with start/end time
 
-#### Step 4: Calculate font size
+#### Step 4: Determine target dimensions and calculate font size
 
-For 80% width target with Big Shoulders Display Bold at max 6 words:
+If `-HD` (or no flag), set target dimensions to 1920x1080. If `-4K`, use source dimensions.
 
 ```python
-font_size = int(width * 0.0495)  # ~190px at 3840px width, fits longest 6-word caption within 80% width
+# Determine target dimensions
+if resolution == "4K":
+    target_w, target_h = width, height
+else:  # HD (default)
+    target_w, target_h = 1920, 1080
+
+# Calculate font size from TARGET dimensions
+font_size = int(target_w * 0.0495)  # ~95px at 1920px, ~190px at 3840px
 box_padding = int(font_size * 0.07)
-y_position = int(height * 0.80)
+y_position = int(target_h * 0.80)
 ```
 
 #### Step 5: Build drawtext filter chain
@@ -96,7 +104,18 @@ for start, end, text in caption_events:
 
 Chain all drawtext filters with commas, write to a temp file (too long for command line).
 
-#### Step 6: Render with ffmpeg
+#### Step 6: Build filter chain and render with ffmpeg
+
+If downscaling to HD, prepend `scale=1920:1080` to the filter chain before the drawtext filters:
+
+```python
+if resolution != "4K" and (width != 1920 or height != 1080):
+    filter_chain = f"scale=1920:1080,{drawtext_filters}"
+else:
+    filter_chain = drawtext_filters
+```
+
+Write the full filter chain to the temp file, then render:
 
 ```bash
 ffmpeg -y -i <input> \
