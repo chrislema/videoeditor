@@ -4,7 +4,7 @@ A 7-step automated video editing pipeline built as Claude Code skills. Designed 
 
 ## What it does
 
-Given a raw video file, `/process-video <filename>` runs the full pipeline:
+Given a raw video file, `/process-video <filename> [-HD|-4K]` runs the full pipeline. Output defaults to **1080p HD** unless `-4K` is specified.
 
 1. **Remove Silence** — Detects silent gaps longer than 0.5s using ffmpeg's `silencedetect` and trims them down to 0.3s natural pauses. Uses trim/atrim + concat filters to reassemble the video without dead air.
 
@@ -19,7 +19,7 @@ Given a raw video file, `/process-video <filename>` runs the full pipeline:
 
 5. **Master Audio** — Full broadcast-ready audio chain: highpass/lowpass filtering, presence EQ boost at 3kHz, warmth at 200Hz, 3:1 compression, gain staging, and loudness normalization to -16 LUFS.
 
-6. **Add Captions** — Transcribes again with whisper-cli, breaks into 6-word ALL CAPS chunks, and burns them in using ffmpeg's drawtext filter. White text on a 70% opacity black box, Big Shoulders Display Bold 700, centered at 80% of frame height.
+6. **Add Captions** — Transcribes again with whisper-cli, breaks into 6-word ALL CAPS chunks, and burns them in using ffmpeg's drawtext filter. White text on a 70% opacity black box, Big Shoulders Display Bold 700, centered at 80% of frame height. If outputting HD, prepends a `scale=1920:1080` filter and calculates font size from target dimensions.
 
 7. **Clean Artifacts** — Deletes all intermediate files (`_trimmed`, `_zoomed`, `_colorcorrected`, `_mastered`, `_sections.json`), keeping only the original and `_final.mp4`.
 
@@ -31,8 +31,9 @@ Given a raw video file, `/process-video <filename>` runs the full pipeline:
 # Standard ffmpeg (used for steps 1–5)
 brew install ffmpeg
 
-# Full ffmpeg build with libfreetype/drawtext support (required for step 6: captions)
-brew install ffmpeg-full
+# ffmpeg with drawtext/libfreetype support (required for step 6: captions)
+brew tap homebrew-ffmpeg/ffmpeg
+brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-fdk-aac
 
 # whisper.cpp CLI for transcription (steps 2 and 6)
 brew install whisper-cpp
@@ -72,12 +73,12 @@ curl -L -o /tmp/BigShouldersDisplay.zip \
 # Extract and install the 700 weight
 unzip /tmp/BigShouldersDisplay.zip -d /tmp/BigShouldersDisplay
 cp /tmp/BigShouldersDisplay/static/BigShouldersDisplay-Bold.ttf \
-  ~/Library/Fonts/BigShouldersDisplay-700.ttf
+  ~/Library/Fonts/BigShouldersDisplay-Bold.ttf
 ```
 
 The pipeline expects the font at:
 ```
-/Users/<username>/Library/Fonts/BigShouldersDisplay-700.ttf
+/Users/<username>/Library/Fonts/BigShouldersDisplay-Bold.ttf
 ```
 
 > **Note**: If your username differs between machines, update the font path in `06-add-captions.md` to match.
@@ -90,8 +91,8 @@ Quick check that all prerequisites are in place:
 # ffmpeg (standard)
 which ffmpeg && ffmpeg -version | head -1
 
-# ffmpeg-full
-ls /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
+# ffmpeg with drawtext (homebrew-ffmpeg tap)
+ls /opt/homebrew/opt/ffmpeg/bin/ffmpeg
 
 # whisper-cli
 which whisper-cli
@@ -103,7 +104,7 @@ ls /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin
 python3 -c "import cv2; print(f'OpenCV {cv2.__version__}')"
 
 # Font
-ls ~/Library/Fonts/BigShouldersDisplay-700.ttf
+ls ~/Library/Fonts/BigShouldersDisplay-Bold.ttf
 ```
 
 ## Usage
@@ -111,7 +112,9 @@ ls ~/Library/Fonts/BigShouldersDisplay-700.ttf
 These are Claude Code skills. Place the `.md` files in your Claude Code skills directory and invoke:
 
 ```
-/process-video myrecording.mp4
+/process-video myrecording.mp4          # → 1080p HD output (default)
+/process-video myrecording.mp4 -HD      # → 1080p HD output
+/process-video myrecording.mp4 -4K      # → 4K output (source resolution)
 ```
 
 Or run individual steps:
