@@ -21,8 +21,8 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 The user may optionally specify:
 - **input**: Path to the video file (if not provided, ask)
 - **output**: Path for the output file (default: `<input_basename>_captioned.<ext>`)
-- **resolution**: `-HD` (1920x1080) or `-4K` (keep source). Default: `-HD`
-- **max_words**: Maximum words per caption line (default: 6)
+- **resolution**: `-HD` (1920x1080), `-4K` (keep source), or `-portrait` (1080x1920). Default: `-HD`
+- **max_words**: Maximum words per caption line (default: 6 for landscape, 3 for portrait)
 - **target_width**: Target percentage of video width for text (default: 80%)
 - **box_opacity**: Opacity of the black background box, 0.0-1.0 (default: 0.70, meaning 30% transparent)
 
@@ -48,26 +48,34 @@ Parse the `[HH:MM:SS.mmm --> HH:MM:SS.mmm] text` lines from output.
 
 #### Step 3: Break into caption events
 
-- Split each transcript segment into chunks of max 6 words
+- Split each transcript segment into chunks of max **6 words** (landscape) or max **3 words** (portrait — narrower frame needs shorter lines)
 - Convert all text to UPPERCASE
 - Distribute the segment's time evenly across its chunks
 - Each chunk becomes a separate caption event with start/end time
 
 #### Step 4: Determine target dimensions and calculate font size
 
-If `-HD` (or no flag), set target dimensions to 1920x1080. If `-4K`, use source dimensions.
+Set target dimensions based on the resolution flag:
 
 ```python
 # Determine target dimensions
-if resolution == "4K":
+if resolution == "portrait":
+    target_w, target_h = 1080, 1920
+elif resolution == "4K":
     target_w, target_h = width, height
 else:  # HD (default)
     target_w, target_h = 1920, 1080
 
 # Calculate font size from TARGET dimensions
-font_size = int(target_w * 0.0495)  # ~95px at 1920px, ~190px at 3840px
-box_padding = int(font_size * 0.07)
-y_position = int(target_h * 0.80)
+if resolution == "portrait":
+    # Portrait: larger relative font for narrow frame, higher position to avoid thumb zone
+    font_size = int(target_w * 0.065)   # ~70px at 1080px wide
+    box_padding = int(font_size * 0.10)
+    y_position = int(target_h * 0.75)   # higher up — avoids mobile UI/thumb zone at bottom
+else:
+    font_size = int(target_w * 0.0495)  # ~95px at 1920px, ~190px at 3840px
+    box_padding = int(font_size * 0.07)
+    y_position = int(target_h * 0.80)
 ```
 
 #### Step 5: Build drawtext filter chain
@@ -106,10 +114,16 @@ Chain all drawtext filters with commas, write to a temp file (too long for comma
 
 #### Step 6: Build filter chain and render with ffmpeg
 
-If downscaling to HD, prepend `scale=1920:1080` to the filter chain before the drawtext filters:
+If scaling is needed, prepend the appropriate `scale=` filter to the filter chain before the drawtext filters:
 
 ```python
-if resolution != "4K" and (width != 1920 or height != 1080):
+if resolution == "portrait":
+    # Portrait video is already 1080x1920 from the zoom step, but verify
+    if width != 1080 or height != 1920:
+        filter_chain = f"scale=1080:1920,{drawtext_filters}"
+    else:
+        filter_chain = drawtext_filters
+elif resolution != "4K" and (width != 1920 or height != 1080):
     filter_chain = f"scale=1920:1080,{drawtext_filters}"
 else:
     filter_chain = drawtext_filters
@@ -133,9 +147,10 @@ ffmpeg -y -i <input> \
 - **Case**: ALL CAPS
 - **Color**: White text
 - **Background**: Black box at 70% opacity (30% transparent), sized to fit the text
-- **Position**: Centered horizontally, at 80% of video height
-- **Max words per line**: 6
+- **Position**: Centered horizontally. Landscape: 80% of video height. Portrait: 75% of video height (higher to avoid mobile thumb zone).
+- **Max words per line**: 6 (landscape) / 3 (portrait)
 - **Target width**: ~80% of video width
+- **Font size multiplier**: Landscape: `target_width * 0.0495`. Portrait: `target_width * 0.065` (larger relative to narrow frame).
 
 ### Adjustments
 

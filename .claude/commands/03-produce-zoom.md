@@ -23,6 +23,7 @@ The user may optionally specify:
 - **input**: Path to the video file (if not provided, infer from JSON metadata or ask)
 - **sections_json**: Path to the sections JSON file (if not provided, look for `<input_basename>_sections.json`)
 - **output**: Path for the output file (default: `<input_basename>_zoomed.mp4`)
+- **resolution**: `-HD` (default), `-4K`, or `-portrait` (1080x1920 vertical 9:16)
 
 ### Process
 
@@ -98,7 +99,9 @@ else:
 
 #### Step 3: Build ffmpeg filter
 
-For each section, calculate the crop region based on the zoom level:
+For each section, calculate the crop region based on the zoom level and resolution mode.
+
+##### Landscape mode (default — `-HD` or `-4K`)
 
 ```python
 zoom = zoom_levels[section["label"]]
@@ -114,7 +117,43 @@ cx = max(0, min(face_cx - cw // 2, width - cw))
 cy = max(0, min(face_cy - ch // 2, height - ch))
 ```
 
-Build the filter_complex with trim/crop/scale per section:
+##### Portrait mode (`-portrait`)
+
+Portrait crops a 9:16 region from the 16:9 source. Since the source is wider than tall, the crop is always narrower than the source width. The zoom levels control how much of the source **height** is used, which determines the framing:
+
+- **normal** (head-to-waist): use ~85% of source height → generous torso framing
+- **emphasis** (head-and-shoulders): use ~65% of source height → tighter
+- **critical** (tight face): use ~45% of source height → punched in on face
+
+```python
+# Portrait height fractions per label (how much source height to use)
+portrait_height_frac = {
+    "normal": 0.85,
+    "emphasis": 0.65,
+    "critical": 0.45,
+}
+
+frac = portrait_height_frac[section["label"]]
+
+# Crop height is a fraction of source height; width enforces 9:16 ratio
+ch = int(height * frac)
+cw = int(ch * 9 / 16)
+cw = cw - (cw % 2)  # must be even
+ch = ch - (ch % 2)
+
+# Horizontal: center on face
+cx = max(0, min(face_cx - cw // 2, width - cw))
+
+# Vertical: position face in the upper third of the crop.
+# Offset the crop so face_cy lands at ~30% from the top of the crop region.
+# This leaves head room above and torso/waist below.
+face_target_y = int(ch * 0.30)
+cy = max(0, min(face_cy - face_target_y, height - ch))
+```
+
+The output scale target for portrait is always `1080:1920`.
+
+##### Build the filter_complex
 
 ```
 [0:v]trim=start=S:end=E,setpts=PTS-STARTPTS,crop=CW:CH:CX:CY,scale=W:H:flags=lanczos[v0];
@@ -123,8 +162,13 @@ Build the filter_complex with trim/crop/scale per section:
 [v0][a0][v1][a1]...concat=n=N:v=1:a=1[outv][outa]
 ```
 
+Scale targets:
+- `-HD`: scale back to source dimensions (zoom effect only)
+- `-4K`: scale back to source dimensions (zoom effect only)
+- `-portrait`: scale to `1080:1920` (9:16 output)
+
 Key details:
-- Video: `trim` -> `setpts` -> `crop` -> `scale` (back to original dimensions using lanczos)
+- Video: `trim` -> `setpts` -> `crop` -> `scale` (lanczos)
 - Audio: `atrim` -> `asetpts`
 - Concat inputs must be interleaved: `[v0][a0][v1][a1]...`
 - Write the filter to a temp file since it's too long for command line
@@ -146,14 +190,16 @@ Note: Use `-/filter_complex <file>` for ffmpeg 8.x+. For older ffmpeg, use `-fil
 
 Print:
 - Original video dimensions
+- Output dimensions (source resolution for landscape, 1080x1920 for portrait)
 - Face center position used
 - Number of sections rendered and label distribution
 - Output file path and duration
 
 ### Important notes
 
-- The zoom is a **crop and scale** operation: a 1.6x zoom crops to 1/1.6 of the frame centered on the face, then scales back up to the original resolution. This simulates "zooming in."
-- Normal (1.0x) means no crop — full frame is used.
+- **Landscape zoom**: a crop and scale operation — a 1.6x zoom crops to 1/1.6 of the frame centered on the face, then scales back up to the original resolution. Normal (1.0x) = full frame.
+- **Portrait zoom**: crops a 9:16 slice from the 16:9 source, with the face positioned in the upper third. Normal = head-to-waist, emphasis = head-and-shoulders, critical = tight face. The output is always 1080x1920.
 - All sections must be continuous (no gaps) and cover the full video duration.
-- The output maintains the original video resolution (e.g., 3840x2160).
+- For landscape, the output maintains the original video resolution (e.g., 3840x2160). For portrait, output is always 1080x1920.
 - Face detection uses 10 sample frames spread across the video. This assumes a relatively stationary speaker (talking head format). For videos with significant movement, more sophisticated per-section face tracking would be needed.
+- Portrait mode assumes the source is landscape (16:9). If the source is already portrait or square, skip the portrait crop and just scale to 1080x1920.
