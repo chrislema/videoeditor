@@ -4,7 +4,7 @@ A 7-step automated video editing pipeline built as Claude Code skills. Designed 
 
 ## What it does
 
-Given a raw video file, `/process-video <filename> [-HD|-4K]` runs the full pipeline. Output defaults to **1080p HD** unless `-4K` is specified.
+Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait]` runs the full pipeline. Output defaults to **1080p HD** unless another flag is specified.
 
 1. **Remove Silence** — Detects silent gaps longer than 0.5s using ffmpeg's `silencedetect` and trims them down to 0.3s natural pauses. Uses trim/atrim + concat filters to reassemble the video without dead air.
 
@@ -13,13 +13,13 @@ Given a raw video file, `/process-video <filename> [-HD|-4K]` runs the full pipe
    - **emphasis** (1.25x) — key points, rhetorical questions, rising energy (~35%)
    - **critical** (1.6x) — thesis statements, punchlines, emotional peaks (~25%)
 
-3. **Produce Zoom** — Uses OpenCV's Haar cascade face detector across 10 sampled frames to find the average face position. For each labeled section, crops the frame to the corresponding zoom level centered on the face, then scales back to original resolution. Normal = full frame, critical = tight face crop.
+3. **Produce Zoom** — Uses OpenCV's Haar cascade face detector across 10 sampled frames to find the average face position. For landscape: crops the frame to the corresponding zoom level centered on the face, then scales back to original resolution (normal = full frame, critical = tight face crop). For `-portrait`: crops a 9:16 region from the 16:9 source with the face in the upper third — normal = head-to-waist (~85% height), emphasis = head-and-shoulders (~65%), critical = tight face (~45%). Output is 1080x1920.
 
 4. **Correct Colors** — Applies a "warm-punch" color grade tuned for indoor talking-head footage: subtle warm color balance shift, mild S-curve contrast, slight brightness and saturation lift.
 
 5. **Master Audio** — Full broadcast-ready audio chain: highpass/lowpass filtering, presence EQ boost at 3kHz, warmth at 200Hz, 3:1 compression, gain staging, and loudness normalization to -16 LUFS.
 
-6. **Add Captions** — Transcribes again with whisper-cli, breaks into 6-word ALL CAPS chunks, and burns them in using ffmpeg's drawtext filter. White text on a 70% opacity black box, Big Shoulders Display Bold 700, centered at 80% of frame height. If outputting HD, prepends a `scale=1920:1080` filter and calculates font size from target dimensions.
+6. **Add Captions** — Transcribes again with whisper-cli and burns in captions using ffmpeg's drawtext filter. White text on a 70% opacity black box, Big Shoulders Display Bold 700. For landscape: 6-word ALL CAPS chunks at 80% of frame height. For `-portrait`: 3-word chunks with larger relative font, positioned at 75% height to avoid the mobile thumb zone.
 
 7. **Clean Artifacts** — Deletes all intermediate files (`_trimmed`, `_zoomed`, `_colorcorrected`, `_mastered`, `_sections.json`), keeping only the original and `_final.mp4`.
 
@@ -112,9 +112,10 @@ ls ~/Library/Fonts/BigShouldersDisplay-Bold.ttf
 These are Claude Code skills. Place the `.md` files in your Claude Code skills directory and invoke:
 
 ```
-/process-video myrecording.mp4          # → 1080p HD output (default)
-/process-video myrecording.mp4 -HD      # → 1080p HD output
-/process-video myrecording.mp4 -4K      # → 4K output (source resolution)
+/process-video myrecording.mp4              # → 1080p HD output (default)
+/process-video myrecording.mp4 -HD          # → 1080p HD output
+/process-video myrecording.mp4 -4K          # → 4K output (source resolution)
+/process-video myrecording.mp4 -portrait    # → Portrait 1080x1920 (9:16 vertical)
 ```
 
 Or run individual steps:

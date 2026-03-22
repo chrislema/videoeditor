@@ -79,5 +79,6 @@ If the user wants to tweak the look, adjust these values:
 
 ### Important notes
 - This skill should typically be the **last step** in the pipeline, after silence removal and zoom processing
+- The filters are resolution-agnostic — they work identically on landscape (16:9), portrait (9:16), and any other aspect ratio. No special handling is needed for `-portrait` mode; the color correction filters apply the same way regardless of frame dimensions.
 - The filters are designed for talking-head content. Different video types (outdoor, product shots, screencasts) may need different settings.
 - If the input video already has a color grade or LUT applied, these filters stack on top — results may be too warm or contrasty. Ask the user about their source footage.
