@@ -1,6 +1,6 @@
 ---
 name: process-video
-description: Run the full 6-step video editing pipeline on a raw talking-head video to produce a polished final output
+description: Run the full 7-step video editing pipeline on a raw talking-head video to produce a polished final output
 user_invocable: true
 metadata:
   tags: video, pipeline, editing, automation, ffmpeg
@@ -14,29 +14,91 @@ Use this skill when the user wants to run the full video editing pipeline on a r
 
 ### Input
 
-The user provides a filename as an argument, optionally followed by a resolution flag. If no filename is provided, ask for one. The file should be in the current working directory or an absolute path.
+The user provides a filename as an argument, optionally followed by one or more flags. If no filename is provided, ask for one. The file should be in the current working directory or an absolute path. Flags are case-insensitive and can be combined in any order.
 
+**Resolution flags** (mutually exclusive — last one wins if multiple are given):
 - `-HD` (default): Final output scaled to 1920x1080 (landscape 16:9)
 - `-4K`: Final output keeps source resolution (up to 3840x2160, landscape)
 - `-portrait`: Final output scaled to 1080x1920 (vertical 9:16, for Reels/Shorts/LinkedIn)
-- If no flag is provided, defaults to `-HD`
+- If no resolution flag is provided, defaults to `-HD`
+
+**Option flags** (combinable with any resolution flag):
+- `-nocaptions`: Skip the captions step (step 6). The mastered video becomes the final output directly. Useful for videos where captions aren't needed or will be added separately.
+
+**Flag parsing**: Normalize all flags to lowercase before matching. `-HD`, `-hd`, `-Hd` are all equivalent. `-NoCaptions`, `-nocaptions`, `-NOCAPTIONS` are all equivalent. Flags can appear in any order after the filename.
 
 Examples:
-- `/process-video testvideo.mp4` → HD output (1920x1080)
-- `/process-video testvideo.mp4 -HD` → HD output (1920x1080)
-- `/process-video testvideo.mp4 -4K` → 4K output (source resolution)
-- `/process-video testvideo.mp4 -portrait` → Portrait output (1080x1920)
+- `/process-video testvideo.mp4` → HD output with captions
+- `/process-video testvideo.mp4 -HD` → HD output with captions
+- `/process-video testvideo.mp4 -4K` → 4K output with captions
+- `/process-video testvideo.mp4 -portrait` → Portrait output (1080x1920) with captions
+- `/process-video testvideo.mp4 -nocaptions` → HD output, no captions
+- `/process-video testvideo.mp4 -portrait -nocaptions` → Portrait output, no captions
+- `/process-video testvideo.mp4 -hd -nocaptions` → HD output, no captions
+- `/process-video testvideo.mp4 -4K -nocaptions` → 4K output, no captions
 
 ### Prerequisites
 - `ffmpeg` (standard) for steps 1-5
-- `ffmpeg` at `/opt/homebrew/opt/ffmpeg/bin/ffmpeg` for step 6 (captions, via homebrew-ffmpeg tap with drawtext support)
+- `ffmpeg` at `/opt/homebrew/opt/ffmpeg/bin/ffmpeg` for step 6 (captions, via homebrew-ffmpeg tap with drawtext support) — not needed if `-nocaptions` is used
 - `whisper-cli` with model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
 - `opencv-python-headless` (pip)
-- Big Shoulders Display Bold 700 font at `/Users/chrislema/Library/Fonts/BigShouldersDisplay-Bold.ttf`
+- Big Shoulders Display Bold 700 font at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf` (resolve `~` via `os.path.expanduser()` at runtime) — not needed if `-nocaptions` is used
+
+### Pre-flight check
+
+Before running any pipeline step, validate that all required tools and files are present. **Stop immediately and report what's missing** if any check fails.
+
+```python
+import subprocess, os, sys
+
+errors = []
+
+# 1. ffmpeg (standard)
+if subprocess.run(["which", "ffmpeg"], capture_output=True).returncode != 0:
+    errors.append("ffmpeg not found. Install with: brew install ffmpeg")
+
+# 2. whisper-cli (try common binary names)
+whisper_bin = None
+for name in ["whisper-cli", "whisper-cpp", "main"]:
+    if subprocess.run(["which", name], capture_output=True).returncode == 0:
+        whisper_bin = name
+        break
+if not whisper_bin:
+    errors.append("whisper-cli not found. Install with: brew install whisper-cpp")
+
+# 3. Whisper model
+model_path = "/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin"
+if not os.path.exists(model_path):
+    errors.append(f"Whisper model not found at {model_path}. Run: cd /opt/homebrew/share/whisper-cpp/models && bash download-ggml-model.sh medium")
+
+# 4. OpenCV
+try:
+    subprocess.run([sys.executable, "-c", "import cv2"], capture_output=True, check=True)
+except subprocess.CalledProcessError:
+    errors.append("opencv-python-headless not found. Install with: pip3 install opencv-python-headless")
+
+# 5. Captions prerequisites (only if captions are enabled)
+if not nocaptions:
+    # ffmpeg with drawtext support
+    homebrew_ffmpeg = "/opt/homebrew/opt/ffmpeg/bin/ffmpeg"
+    if not os.path.exists(homebrew_ffmpeg):
+        errors.append(f"homebrew-ffmpeg tap not found at {homebrew_ffmpeg}. Install with: brew tap homebrew-ffmpeg/ffmpeg && brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-fdk-aac")
+
+    # Font file
+    font_path = os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-Bold.ttf")
+    if not os.path.exists(font_path):
+        errors.append(f"Caption font not found at {font_path}. Download from Google Fonts: https://fonts.google.com/specimen/Big+Shoulders+Display")
+
+if errors:
+    print("Pre-flight check failed:")
+    for e in errors:
+        print(f"  - {e}")
+    # STOP — do not proceed with the pipeline
+```
 
 ### Pipeline
 
-Run these 6 steps in order. Each step takes the output of the previous step as input. All intermediate files go in the same directory as the input file.
+Run these steps in order. Each step takes the output of the previous step as input. All intermediate files go in the same directory as the input file.
 
 Given input `<name>.<ext>`:
 
@@ -78,6 +140,13 @@ Given input `<name>.<ext>`:
 - Video copied, audio re-encoded AAC 192k
 
 #### Step 6: Add Captions (`/add-captions`)
+
+**Skip this step if `-nocaptions` flag was provided.** When skipping, copy or rename `<name>_mastered.<ext>` to `<name>_final.mp4` instead:
+```bash
+ffmpeg -y -i <name>_mastered.<ext> -c copy <name>_final.mp4
+```
+
+If captions are enabled (the default):
 - **Input**: `<name>_mastered.<ext>`
 - **Output**: `<name>_final.mp4`
 - **Resolution**: Pass the resolution flag (`-HD`, `-4K`, or `-portrait`) to this step. Default is `-HD` (1920x1080).
@@ -99,7 +168,8 @@ After completion, report:
 - Original duration vs final duration
 - Time saved from silence removal
 - Number of zoom sections and label distribution
-- Confirm all 6 steps completed
+- Whether captions were included or skipped
+- Confirm all steps completed
 
 #### Step 7: Clean Artifacts (`/clean-artifacts`)
 - Delete intermediate files: `_trimmed`, `_trimmed_sections.json`, `_zoomed`, `_colorcorrected`, `_mastered`, `_captioned`

@@ -15,7 +15,7 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 ### Prerequisites
 - `ffmpeg` must be installed with drawtext/libfreetype support (via `homebrew-ffmpeg/ffmpeg` tap)
 - `whisper-cli` must be installed with a model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
-- Big Shoulders Display Bold 700 font at `/Users/chrislema/Library/Fonts/BigShouldersDisplay-Bold.ttf` (static weight 700 from Google Fonts CDN: `https://fonts.gstatic.com/s/bigshouldersdisplay/v24/fC1MPZJEZG-e9gHhdI4-NBbfd2ys3SjJCx12wPgf9g-_3F0YdWg8JF4.ttf`)
+- Big Shoulders Display Bold 700 font at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf` (static weight 700 from Google Fonts CDN: `https://fonts.gstatic.com/s/bigshouldersdisplay/v24/fC1MPZJEZG-e9gHhdI4-NBbfd2ys3SjJCx12wPgf9g-_3F0YdWg8JF4.ttf`). Resolve `~` to the actual home directory at runtime using `os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-Bold.ttf")`.
 
 ### Parameters
 The user may optionally specify:
@@ -40,8 +40,9 @@ width, height = map(int, probe.stdout.strip().split(","))
 #### Step 2: Transcribe with whisper
 
 ```bash
-ffmpeg -y -i <input> -ar 16000 -ac 1 -f wav /tmp/caption_whisper.wav
-whisper-cli -m /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin -f /tmp/caption_whisper.wav
+ffmpeg -y -i <input> -ar 16000 -ac 1 -f wav /tmp/caption_whisper_$$.wav
+whisper-cli -m /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin -f /tmp/caption_whisper_$$.wav
+rm -f /tmp/caption_whisper_$$.wav
 ```
 
 Parse the `[HH:MM:SS.mmm --> HH:MM:SS.mmm] text` lines from output.
@@ -110,7 +111,7 @@ for start, end, text in caption_events:
     )
 ```
 
-Chain all drawtext filters with commas, write to a temp file (too long for command line).
+Chain all drawtext filters with commas, write to a PID-unique temp file (e.g., `/tmp/caption_filter_{os.getpid()}.txt`) to avoid collisions with concurrent runs.
 
 #### Step 6: Build filter chain and render with ffmpeg
 
@@ -133,7 +134,7 @@ Write the full filter chain to the temp file, then render:
 
 ```bash
 ffmpeg -y -i <input> \
-  -/filter_complex /tmp/caption_filter.txt \
+  -/filter_complex /tmp/caption_filter_$$.txt \
   -c:v libx264 -preset fast -crf 18 \
   -c:a copy \
   <output>

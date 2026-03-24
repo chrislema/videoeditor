@@ -171,13 +171,13 @@ Key details:
 - Video: `trim` -> `setpts` -> `crop` -> `scale` (lanczos)
 - Audio: `atrim` -> `asetpts`
 - Concat inputs must be interleaved: `[v0][a0][v1][a1]...`
-- Write the filter to a temp file since it's too long for command line
+- Write the filter to a temp file since it's too long for command line. Use a PID-unique filename (e.g., `/tmp/zoom_filter_{os.getpid()}.txt`) to avoid collisions with concurrent runs. Delete the temp file after ffmpeg completes.
 
 #### Step 4: Render with ffmpeg
 
 ```bash
 ffmpeg -y -i <input> \
-  -/filter_complex /tmp/zoom_filter.txt \
+  -/filter_complex /tmp/zoom_filter_$$.txt \
   -map "[outv]" -map "[outa]" \
   -c:v libx264 -preset fast -crf 18 \
   -c:a aac -b:a 192k \

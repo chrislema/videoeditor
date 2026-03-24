@@ -32,8 +32,9 @@ The user may optionally specify:
 Extract audio and run whisper-cli to get timestamped transcript:
 
 ```bash
-ffmpeg -i <input> -ar 16000 -ac 1 -f wav /tmp/zoom_whisper.wav -y
-whisper-cli -m /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin -f /tmp/zoom_whisper.wav
+ffmpeg -i <input> -ar 16000 -ac 1 -f wav /tmp/zoom_whisper_$$.wav -y
+whisper-cli -m /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin -f /tmp/zoom_whisper_$$.wav
+rm -f /tmp/zoom_whisper_$$.wav
 ```
 
 Parse the `[start --> end] text` lines from output.
@@ -59,7 +60,7 @@ Analyze the **content and rhetorical function** of each section and assign a lab
 - Asides, caveats, qualifications ("I read it in a book," "whether it was research or fabrication")
 - Connective tissue ("And so," "And what tends to happen")
 
-**emphasis** (medium zoom, 140%)
+**emphasis** (medium zoom, 125%)
 - Key supporting points that build toward a conclusion
 - Rhetorical questions that create tension ("then what do you do next?")
 - Contrasts and comparisons being set up
@@ -95,7 +96,7 @@ Write a JSON file named `<input_basename>_sections.json` with this structure:
     "duration": <total_seconds>,
     "zoom_levels": {
       "normal": 1.0,
-      "emphasis": 1.4,
+      "emphasis": 1.25,
       "critical": 1.6
     },
     "total_sections": <count>

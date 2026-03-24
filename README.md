@@ -4,7 +4,7 @@ A 7-step automated video editing pipeline built as Claude Code skills. Designed 
 
 ## What it does
 
-Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait]` runs the full pipeline. Output defaults to **1080p HD** unless another flag is specified.
+Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocaptions]` runs the full pipeline. Output defaults to **1080p HD** unless another flag is specified. Flags can be combined in any order.
 
 1. **Remove Silence** — Detects silent gaps longer than 0.5s using ffmpeg's `silencedetect` and trims them down to 0.3s natural pauses. Uses trim/atrim + concat filters to reassemble the video without dead air.
 
@@ -78,10 +78,10 @@ cp /tmp/BigShouldersDisplay/static/BigShouldersDisplay-Bold.ttf \
 
 The pipeline expects the font at:
 ```
-/Users/<username>/Library/Fonts/BigShouldersDisplay-Bold.ttf
+~/Library/Fonts/BigShouldersDisplay-Bold.ttf
 ```
 
-> **Note**: If your username differs between machines, update the font path in `06-add-captions.md` to match.
+The path is resolved at runtime via `os.path.expanduser()` so it works regardless of username.
 
 ### Verify everything
 
@@ -116,6 +116,8 @@ These are Claude Code skills. Place the `.md` files in your Claude Code skills d
 /process-video myrecording.mp4 -HD          # → 1080p HD output
 /process-video myrecording.mp4 -4K          # → 4K output (source resolution)
 /process-video myrecording.mp4 -portrait    # → Portrait 1080x1920 (9:16 vertical)
+/process-video myrecording.mp4 -nocaptions  # → HD output, no captions
+/process-video myrecording.mp4 -portrait -nocaptions  # → Portrait, no captions
 ```
 
 Or run individual steps:

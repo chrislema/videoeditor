@@ -107,12 +107,15 @@ concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(segments)))
 parts.append(f"{concat_inputs}concat=n={len(segments)}:v=1:a=1[outv][outa]")
 
 filter_complex = "\n".join(parts)
-with open("/tmp/silence_filter.txt", "w") as f:
+import os
+filter_tmp = f"/tmp/silence_filter_{os.getpid()}.txt"
+with open(filter_tmp, "w") as f:
     f.write(filter_complex)
 
-cmd = ["ffmpeg", "-y", "-i", video, "-/filter_complex", "/tmp/silence_filter.txt",
+cmd = ["ffmpeg", "-y", "-i", video, "-/filter_complex", filter_tmp,
        "-map", "[outv]", "-map", "[outa]",
        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
        "-c:a", "aac", "-b:a", "192k", output]
 subprocess.run(cmd, check=True)
+os.remove(filter_tmp)
 ```
