@@ -36,11 +36,11 @@ The user may optionally specify:
    - For each silence, keep `pause_duration / 2` seconds on each side
    - Merge overlapping or adjacent segments
 
-4. **Render trimmed video** using ffmpeg's trim/atrim filters with concat:
-   - Build a filter_complex with `trim`/`setpts` for video and `atrim`/`asetpts` for audio per segment
-   - Concat inputs must be interleaved: `[v0][a0][v1][a1]...concat=n=N:v=1:a=1`
-   - Write filter to a temp file and use `-/filter_complex <file>` (ffmpeg 8.x) or `-filter_complex_script <file>` (older ffmpeg)
-   - Encode with `-c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k`
+4. **Extract segments with stream copy** (no re-encoding):
+   - For each non-silent segment, extract to a temp file using `ffmpeg -ss <start> -to <end> -i <input> -c copy -avoid_negative_ts make_zero /tmp/seg_NNN.mp4`
+   - Write a concat demuxer list file: `file '/tmp/seg_000.mp4'\nfile '/tmp/seg_001.mp4'\n...`
+   - Concatenate all segments: `ffmpeg -f concat -safe 0 -i <list_file> -c copy <output>`
+   - Clean up temp segment files after concatenation
 
 5. **Output** the trimmed file as `<original_name>_trimmed.<ext>` in the same directory
 
@@ -98,24 +98,33 @@ for s, e in segments[1:]:
         merged.append((s, e))
 segments = merged
 
-# Build filter_complex
-parts = []
+# Extract segments with stream copy (no re-encoding)
+import os, tempfile
+tmpdir = tempfile.mkdtemp(prefix="silence_")
+seg_files = []
+
 for i, (s, e) in enumerate(segments):
-    parts.append(f"[0:v]trim=start={s:.6f}:end={e:.6f},setpts=PTS-STARTPTS[v{i}];")
-    parts.append(f"[0:a]atrim=start={s:.6f}:end={e:.6f},asetpts=PTS-STARTPTS[a{i}];")
-concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(segments)))
-parts.append(f"{concat_inputs}concat=n={len(segments)}:v=1:a=1[outv][outa]")
+    seg_path = os.path.join(tmpdir, f"seg_{i:04d}.mp4")
+    seg_files.append(seg_path)
+    subprocess.run([
+        "ffmpeg", "-y", "-ss", f"{s:.6f}", "-to", f"{e:.6f}",
+        "-i", video, "-c", "copy", "-avoid_negative_ts", "make_zero",
+        seg_path
+    ], check=True, capture_output=True)
 
-filter_complex = "\n".join(parts)
-import os
-filter_tmp = f"/tmp/silence_filter_{os.getpid()}.txt"
-with open(filter_tmp, "w") as f:
-    f.write(filter_complex)
+# Write concat list
+concat_list = os.path.join(tmpdir, "concat.txt")
+with open(concat_list, "w") as f:
+    for seg_path in seg_files:
+        f.write(f"file '{seg_path}'\n")
 
-cmd = ["ffmpeg", "-y", "-i", video, "-/filter_complex", filter_tmp,
-       "-map", "[outv]", "-map", "[outa]",
-       "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-       "-c:a", "aac", "-b:a", "192k", output]
-subprocess.run(cmd, check=True)
-os.remove(filter_tmp)
+# Concatenate with stream copy
+subprocess.run([
+    "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+    "-i", concat_list, "-c", "copy", output
+], check=True)
+
+# Clean up temp segments
+import shutil
+shutil.rmtree(tmpdir)
 ```

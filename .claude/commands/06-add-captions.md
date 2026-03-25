@@ -13,7 +13,7 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 ## How to use
 
 ### Prerequisites
-- `ffmpeg` must be installed with drawtext/libfreetype support (via `homebrew-ffmpeg/ffmpeg` tap)
+- `ffmpeg` must be installed with drawtext/libfreetype support (via `ffmpeg-full` tap)
 - `whisper-cli` must be installed with a model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
 - Big Shoulders Display Bold 700 font at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf` (static weight 700 from Google Fonts CDN: `https://fonts.gstatic.com/s/bigshouldersdisplay/v24/fC1MPZJEZG-e9gHhdI4-NBbfd2ys3SjJCx12wPgf9g-_3F0YdWg8JF4.ttf`). Resolve `~` to the actual home directory at runtime using `os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-Bold.ttf")`.
 
@@ -140,7 +140,7 @@ ffmpeg -y -i <input> \
   <output>
 ```
 
-**Important**: The `ffmpeg` binary must have libfreetype/drawtext support. Install via `brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-fdk-aac` (the standard Homebrew `ffmpeg` formula lacks drawtext).
+**Important**: The `ffmpeg` binary must have libfreetype/drawtext support. Install via `brew install ffmpeg-full/ffmpeg --with-fdk-aac` (the standard Homebrew `ffmpeg` formula lacks drawtext).
 
 ### Caption style
 
@@ -168,7 +168,7 @@ ffmpeg -y -i <input> \
 - Adjust `y_position` — `height * 0.80` puts it in the lower fifth. Use `height * 0.85` for lower, `height * 0.70` for higher.
 
 ### Important notes
-- This skill requires `ffmpeg` with drawtext/libfreetype support (installed via `homebrew-ffmpeg/ffmpeg` tap)
+- This skill requires `ffmpeg` with drawtext/libfreetype support (installed via `ffmpeg-full` tap)
 - The font file `BigShouldersDisplay-700.ttf` is a static weight 700 instance downloaded from Google Fonts CDN
 - The black box automatically sizes to fit the text — it is not a fixed-width bar
 - This skill should run after all other video processing (silence removal, zoom, color, audio mastering)

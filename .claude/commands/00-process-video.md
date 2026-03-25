@@ -39,7 +39,7 @@ Examples:
 
 ### Prerequisites
 - `ffmpeg` (standard) for steps 1-5
-- `ffmpeg` at `/opt/homebrew/opt/ffmpeg/bin/ffmpeg` for step 6 (captions, via homebrew-ffmpeg tap with drawtext support) — not needed if `-nocaptions` is used
+- `ffmpeg-full` at `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` for step 6 (captions, with drawtext/libfreetype support) — not needed if `-nocaptions` is used
 - `whisper-cli` with model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
 - `opencv-python-headless` (pip)
 - Big Shoulders Display Bold 700 font at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf` (resolve `~` via `os.path.expanduser()` at runtime) — not needed if `-nocaptions` is used
@@ -80,9 +80,9 @@ except subprocess.CalledProcessError:
 # 5. Captions prerequisites (only if captions are enabled)
 if not nocaptions:
     # ffmpeg with drawtext support
-    homebrew_ffmpeg = "/opt/homebrew/opt/ffmpeg/bin/ffmpeg"
-    if not os.path.exists(homebrew_ffmpeg):
-        errors.append(f"homebrew-ffmpeg tap not found at {homebrew_ffmpeg}. Install with: brew tap homebrew-ffmpeg/ffmpeg && brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-fdk-aac")
+    ffmpeg_full = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"
+    if not os.path.exists(ffmpeg_full):
+        errors.append(f"ffmpeg-full not found at {ffmpeg_full}. Install with: brew install homebrew-ffmpeg/ffmpeg/ffmpeg-full")
 
     # Font file
     font_path = os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-Bold.ttf")
@@ -107,7 +107,7 @@ Given input `<name>.<ext>`:
 - **Output**: `<name>_trimmed.<ext>`
 - Detect silences > 0.5s using `silencedetect=noise=-30dB:d=0.5`
 - Cut silences down to 0.3s natural pauses
-- Use ffmpeg trim/atrim + concat filter
+- Extract segments with `-c copy` (no re-encoding) and concatenate via concat demuxer
 
 #### Step 2: Label Sections (`/label-sections`)
 - **Input**: `<name>_trimmed.<ext>`
@@ -157,7 +157,7 @@ If captions are enabled (the default):
 - Font size calculated from **target** dimensions (not source): `target_width * 0.0495`, centered at `target_height * 0.80`
 - For `-portrait`: target is 1080x1920, font size from `target_width * 0.065` (larger relative to narrow frame), centered at `target_height * 0.75` (higher to avoid thumb zone)
 - If downscaling, prepend appropriate `scale=` filter to the filter chain before drawtext filters
-- **Must use homebrew-ffmpeg tap** (`/opt/homebrew/opt/ffmpeg/bin/ffmpeg`) for drawtext filter
+- **Must use ffmpeg-full** (`/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`) for drawtext filter
 - Output as `_final.mp4` (always mp4 regardless of input format)
 
 ### Output
