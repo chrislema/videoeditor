@@ -42,7 +42,7 @@ Examples:
 - `ffmpeg-full` at `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` for step 6 (captions, with drawtext/libfreetype support) — not needed if `-nocaptions` is used
 - `whisper-cli` with model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
 - `opencv-python-headless` (pip)
-- Big Shoulders Display Bold 700 font at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf` (resolve `~` via `os.path.expanduser()` at runtime) — not needed if `-nocaptions` is used
+- Big Shoulders Display Bold 700 font installed at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf` — resolved via fontconfig by name (`font='Big Shoulders Display'`), not by file path — not needed if `-nocaptions` is used
 
 ### Pre-flight check
 
@@ -84,10 +84,15 @@ if not nocaptions:
     if not os.path.exists(ffmpeg_full):
         errors.append(f"ffmpeg-full not found at {ffmpeg_full}. Install with: brew install homebrew-ffmpeg/ffmpeg/ffmpeg-full")
 
-    # Font file
+    # Font file (must be installed for fontconfig to find it by name)
     font_path = os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-Bold.ttf")
     if not os.path.exists(font_path):
         errors.append(f"Caption font not found at {font_path}. Download from Google Fonts: https://fonts.google.com/specimen/Big+Shoulders+Display")
+
+    # Verify fontconfig can resolve the font name
+    fc_result = subprocess.run(["fc-match", "Big Shoulders Display"], capture_output=True, text=True)
+    if "BigShoulder" not in fc_result.stdout:
+        errors.append(f"fontconfig cannot resolve 'Big Shoulders Display'. Got: {fc_result.stdout.strip()}. Run: fc-cache -fv")
 
 if errors:
     print("Pre-flight check failed:")
@@ -153,7 +158,7 @@ If captions are enabled (the default):
 - Transcribe with whisper-cli
 - For landscape: break into max 6 words per caption, ALL CAPS
 - For `-portrait`: break into max 3 words per caption (narrower frame), ALL CAPS
-- Big Shoulders Display Bold 700, white text on black box (70% opacity)
+- Big Shoulders Display Bold 700 via fontconfig (`font='Big Shoulders Display'`, NOT `fontfile=`), white text on black box (70% opacity)
 - Font size calculated from **target** dimensions (not source): `target_width * 0.0495`, centered at `target_height * 0.80`
 - For `-portrait`: target is 1080x1920, font size from `target_width * 0.065` (larger relative to narrow frame), centered at `target_height * 0.75` (higher to avoid thumb zone)
 - If downscaling, prepend appropriate `scale=` filter to the filter chain before drawtext filters

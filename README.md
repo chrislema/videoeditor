@@ -80,7 +80,7 @@ The pipeline expects the font at:
 ~/Library/Fonts/BigShouldersDisplay-Bold.ttf
 ```
 
-The path is resolved at runtime via `os.path.expanduser()` so it works regardless of username.
+**Important**: `ffmpeg-full` uses fontconfig (`--enable-libfontconfig`) to resolve fonts by name. The drawtext filter must use `font='Big Shoulders Display'`, NOT `fontfile='/path/to/file.ttf'`. The `fontfile` parameter is silently ignored when fontconfig is enabled, causing a fallback to Verdana (which is wider and breaks the caption width constraints). After installing the font, run `fc-cache -fv` to update the fontconfig cache.
 
 ### Verify everything
 

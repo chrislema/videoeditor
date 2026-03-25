@@ -15,7 +15,7 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 ### Prerequisites
 - `ffmpeg` must be installed with drawtext/libfreetype support (via `ffmpeg-full` tap)
 - `whisper-cli` must be installed with a model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
-- Big Shoulders Display Bold 700 font at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf` (static weight 700 from Google Fonts CDN: `https://fonts.gstatic.com/s/bigshouldersdisplay/v24/fC1MPZJEZG-e9gHhdI4-NBbfd2ys3SjJCx12wPgf9g-_3F0YdWg8JF4.ttf`). Resolve `~` to the actual home directory at runtime using `os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-Bold.ttf")`.
+- Big Shoulders Display Bold 700 font installed at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf`. Since `ffmpeg-full` is compiled with `--enable-libfontconfig`, the font is resolved by name (`font='Big Shoulders Display'`), not by file path. The `fontfile` parameter is silently ignored when fontconfig is enabled — always use `font=` instead.
 
 ### Parameters
 The user may optionally specify:
@@ -98,7 +98,7 @@ def escape_drawtext(text):
 for start, end, text in caption_events:
     escaped = escape_drawtext(text)
     dt = (
-        f"drawtext=fontfile='{font_path}'"
+        f"drawtext=font='Big Shoulders Display'"
         f":text='{escaped}'"
         f":fontcolor=white"
         f":fontsize={font_size}"
@@ -140,7 +140,7 @@ ffmpeg -y -i <input> \
   <output>
 ```
 
-**Important**: The `ffmpeg` binary must have libfreetype/drawtext support. Install via `brew install ffmpeg-full/ffmpeg --with-fdk-aac` (the standard Homebrew `ffmpeg` formula lacks drawtext).
+**Important**: Must use `ffmpeg-full` (`/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`) which has both `--enable-libfreetype` and `--enable-libfontconfig`. Use `font='Big Shoulders Display'` (fontconfig name resolution), NOT `fontfile=` (silently ignored when fontconfig is enabled, falls back to Verdana).
 
 ### Caption style
 
@@ -168,7 +168,8 @@ ffmpeg -y -i <input> \
 - Adjust `y_position` — `height * 0.80` puts it in the lower fifth. Use `height * 0.85` for lower, `height * 0.70` for higher.
 
 ### Important notes
-- This skill requires `ffmpeg` with drawtext/libfreetype support (installed via `ffmpeg-full` tap)
-- The font file `BigShouldersDisplay-700.ttf` is a static weight 700 instance downloaded from Google Fonts CDN
+- This skill requires `ffmpeg-full` with drawtext/libfreetype/libfontconfig support
+- The font is resolved via fontconfig by name (`font='Big Shoulders Display'`), NOT by file path — `fontfile=` is silently ignored when fontconfig is enabled and falls back to Verdana
+- The font file `BigShouldersDisplay-Bold.ttf` must be installed at `~/Library/Fonts/` for fontconfig to find it
 - The black box automatically sizes to fit the text — it is not a fixed-width bar
 - This skill should run after all other video processing (silence removal, zoom, color, audio mastering)
