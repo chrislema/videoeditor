@@ -89,30 +89,51 @@ Each caption event becomes a separate `drawtext` filter with `enable='between(t,
 
 ```python
 def escape_drawtext(text):
+    # Strip characters that cause rendering issues (tofu/box glyphs)
+    text = text.replace("'", "")   # apostrophes — font renders tofu for some quote chars
+    text = text.replace('"', '')
+    # Escape ffmpeg drawtext special characters
     text = text.replace("\\", "\\\\")
-    text = text.replace("'", "\u2019")  # right single quote
     text = text.replace(":", "\\:")
-    text = text.replace(",", "\\,")
-    text = text.replace(";", "\\;")
-    text = text.replace("[", "\\[")
-    text = text.replace("]", "\\]")
     text = text.replace("%", "%%")
     return text
+```
+
+**Multi-line captions: use stacked drawtext filters, NEVER newlines in text.**
+
+The Big Shoulders Display font renders the newline character (`\n`) as a visible tofu glyph (X-in-a-box) before breaking the line. Instead, split captions with >4 words into separate drawtext filters stacked vertically:
+
+```python
+line_height = font_size + (box_padding * 2) + 4  # font + box padding + spacing
 
 for start, end, text in caption_events:
-    escaped = escape_drawtext(text)
-    dt = (
-        f"drawtext=font='Big Shoulders Display'"
-        f":text='{escaped}'"
-        f":fontcolor=white"
-        f":fontsize={font_size}"
-        f":box=1"
-        f":boxcolor=black@0.70"
-        f":boxborderw={box_padding}"
-        f":x=(w-text_w)/2"
-        f":y={y_position}"
-        f":enable='between(t\\,{start:.3f}\\,{end:.3f})'"
-    )
+    words = text.split()
+    # Split into max 4-word lines per directive
+    if len(words) > 4:
+        lines = [" ".join(words[i:i+4]) for i in range(0, len(words), 4)]
+    else:
+        lines = [text]
+
+    # Stack lines centered around y_position
+    total_h = len(lines) * line_height
+    start_y = y_position - total_h // 2
+
+    for li, line in enumerate(lines):
+        escaped = escape_drawtext(line)
+        line_y = start_y + li * line_height
+        dt = (
+            f"drawtext=font='Big Shoulders Display'"
+            f":text='{escaped}'"
+            f":fontcolor=white"
+            f":fontsize={font_size}"
+            f":box=1"
+            f":boxcolor=black@0.70"
+            f":boxborderw={box_padding}"
+            f":x=(w-text_w)/2"
+            f":y={line_y}"
+            f":enable='between(t,{start:.3f},{end:.3f})'"
+        )
+        filters.append(dt)
 ```
 
 Chain all drawtext filters with commas, write to a PID-unique temp file (e.g., `/tmp/caption_filter_{os.getpid()}.txt`) to avoid collisions with concurrent runs.
@@ -176,4 +197,5 @@ ffmpeg -y -i <input> \
 - The font is resolved via fontconfig by name (`font='Big Shoulders Display'`), NOT by file path — `fontfile=` is silently ignored when fontconfig is enabled and falls back to Verdana
 - The font file `BigShouldersDisplay-Bold.ttf` must be installed at `~/Library/Fonts/` for fontconfig to find it
 - The black box automatically sizes to fit the text — it is not a fixed-width bar
+- **Never use newline characters (`\n`) in drawtext text.** Big Shoulders Display renders `\n` as a visible tofu glyph (X-in-a-box). For multi-line captions, use separate stacked drawtext filters — one per line, each with the same `enable` time range but offset `y` positions.
 - This skill should run after all other video processing (silence removal, zoom, color, audio mastering)

@@ -220,10 +220,11 @@ The output scale target for portrait is always `1080:1920`.
 
 ```
 [0:v]trim=start=S:end=E,setpts=PTS-STARTPTS,crop=CW:CH:CX:CY,scale=W:H:flags=lanczos[v0];
-[0:a]atrim=start=S:end=E,asetpts=PTS-STARTPTS[a0];
 ...
-[v0][a0][v1][a1]...concat=n=N:v=1:a=1[outv][outa]
+[v0][v1]...concat=n=N:v=1:a=0[outv]
 ```
+
+Audio: map the full primary audio track directly with `-map 0:a` — do not use per-section `atrim`/`concat`. The sections are continuous and cover the full video, so the uncut audio track is already correct.
 
 **Multi-angle mode** (sections have `source` field from `/swap-angles`):
 
@@ -243,19 +244,32 @@ input_idx = sec_idx + 1  # ffmpeg input index (0 = primary, 1 = first secondary,
 ```
 # Primary section with zoom:
 [0:v]trim=start=S:end=E,setpts=PTS-STARTPTS,crop=CW:CH:CX:CY,scale=W:H:flags=lanczos[v0];
-[0:a]atrim=start=S:end=E,asetpts=PTS-STARTPTS[a0];
 
-# Secondary section — full frame, no zoom, timestamps mapped to secondary file:
-[1:v]trim=start=SEC_S:end=SEC_E,setpts=PTS-STARTPTS,scale=W:H:flags=lanczos[v1];
-[0:a]atrim=start=S:end=E,asetpts=PTS-STARTPTS[a1];
+# Secondary section — full frame, no zoom, DURATION-MATCHED to primary audio:
+# Use trim=start=SEC_S:end=SEC_S+AUDIO_DUR (not mapped end time!)
+[1:v]trim=start=SEC_S:end=SEC_S+DUR,setpts=PTS-STARTPTS,scale=W:H:flags=lanczos[v1];
 
 ...
-[v0][a0][v1][a1]...concat=n=N:v=1:a=1[outv][outa]
+# VIDEO only in concat — audio mapped separately:
+[v0][v1]...concat=n=N:v=1:a=0[outv]
 ```
 
-Note the key difference: for secondary video, the `trim=start=SEC_S:end=SEC_E` values are the **secondary file timestamps** (computed via `trimmed_to_secondary`), NOT the trimmed primary timestamps. The audio `atrim` always uses the original trimmed primary timestamps since audio comes from the primary.
+**Critical: use the full primary audio track, not per-section atrim/concat.**
 
-Note: Secondary videos have no audio track — that's why audio is always `[0:a]` (primary) for every section, regardless of which video provides the picture.
+The video concat builds the video-only stream. For audio, map the entire primary audio track directly with `-map 0:a` instead of cutting/rejoining audio segments. Per-section `atrim` + `concat` causes cumulative drift from frame-level duration mismatches — even sub-frame differences add up across 15+ sections and push audio out of sync.
+
+```bash
+ffmpeg -y -i <primary_trimmed> -i <secondary> \
+  -filter_complex_script /tmp/zoom_filter_$$.txt \
+  -map "[outv]" -map "0:a" \        # <-- full primary audio, no cutting
+  -c:v libx264 -preset fast -crf 18 \
+  -c:a aac -b:a 192k \
+  <output>
+```
+
+**Secondary video duration matching**: For secondary sections, compute `sec_start` from the timestamp mapping but set `sec_end = sec_start + audio_duration` where `audio_duration = section["end"] - section["start"]` (the trimmed primary duration). Do NOT use the mapped end time — the segment map inflates the time range because it maps through removed silences, producing secondary clips that are longer than the corresponding audio. Duration-based trimming ensures the video concat total matches the primary audio track length.
+
+Note: Secondary videos have no audio track — that's why audio always comes from the primary, regardless of which video provides the picture.
 
 Scale targets:
 - `-HD`: scale to 1920x1080
@@ -275,7 +289,7 @@ Key details:
 ```bash
 ffmpeg -y -i <input> \
   -filter_complex_script /tmp/zoom_filter_$$.txt \
-  -map "[outv]" -map "[outa]" \
+  -map "[outv]" -map "0:a" \
   -c:v libx264 -preset fast -crf 18 \
   -c:a aac -b:a 192k \
   <output>
@@ -285,11 +299,13 @@ ffmpeg -y -i <input> \
 ```bash
 ffmpeg -y -i <primary_trimmed> -i <secondary_1_original> [-i <secondary_2_original>] \
   -filter_complex_script /tmp/zoom_filter_$$.txt \
-  -map "[outv]" -map "[outa]" \
+  -map "[outv]" -map "0:a" \
   -c:v libx264 -preset fast -crf 18 \
   -c:a aac -b:a 192k \
   <output>
 ```
+
+**Important**: Always use `-map "0:a"` to pass the full primary audio track through uncut. Never use per-section `atrim`/`concat` for audio — it causes cumulative sync drift.
 
 Note: Use `-filter_complex_script <file>` to pass the filter from a file — this works across all ffmpeg versions. (ffmpeg 8.x+ also accepts `-/filter_complex <file>` as shorthand.)
 

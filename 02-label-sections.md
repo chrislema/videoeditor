@@ -82,7 +82,7 @@ Analyze the **content and rhetorical function** of each section and assign a lab
 - The **first half** of most talks is setup — lean toward normal/emphasis
 - The **second half** typically has the payoff — more emphasis/critical
 - **Don't over-index on critical** — if everything is critical, nothing is. Aim for roughly 40% normal, 35% emphasis, 25% critical
-- Consecutive sections with the same label are fine, but avoid long runs of the same label (3+ in a row) unless the content truly warrants it
+- **No more than 2 consecutive sections at the same zoom level.** If 3+ sections in a row would have the same label/zoom, toggle the middle one to an adjacent level (e.g., flip the 3rd consecutive emphasis to normal, or the 3rd consecutive normal to emphasis). This prevents long visual stretches with no zoom change — even a 4-second emphasis between two normals creates a noticeable visual beat.
 - When in doubt between two labels, consider: "Would this moment work as a standalone clip?" If yes, it's critical. If it needs context, it's emphasis or normal.
 
 ### Output format
