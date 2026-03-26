@@ -13,9 +13,9 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 ## How to use
 
 ### Prerequisites
-- `ffmpeg` must be installed with drawtext/libfreetype support (via `ffmpeg-full` tap)
+- `ffmpeg` must be installed with drawtext/libfreetype support (standard Homebrew `ffmpeg` includes this)
 - `whisper-cli` must be installed with a model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
-- Big Shoulders Display Bold 700 font installed at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf`. Since `ffmpeg-full` is compiled with `--enable-libfontconfig`, the font is resolved by name (`font='Big Shoulders Display'`), not by file path. The `fontfile` parameter is silently ignored when fontconfig is enabled — always use `font=` instead.
+- Big Shoulders Display Bold 700 font installed at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf`. The font is resolved via fontconfig by name (`font='Big Shoulders Display'`), not by file path. Always use `font=` instead of `fontfile=`.
 
 ### Parameters
 The user may optionally specify:
@@ -140,7 +140,7 @@ ffmpeg -y -i <input> \
   <output>
 ```
 
-**Important**: Must use `ffmpeg-full` (`/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`) which has both `--enable-libfreetype` and `--enable-libfontconfig`. Use `font='Big Shoulders Display'` (fontconfig name resolution), NOT `fontfile=` (silently ignored when fontconfig is enabled, falls back to Verdana).
+**Important**: Use `font='Big Shoulders Display'` (fontconfig name resolution), NOT `fontfile=` (which may be silently ignored and fall back to Verdana). Standard Homebrew `ffmpeg` includes drawtext with libfreetype and libfontconfig — no separate `ffmpeg-full` tap is needed.
 
 ### Caption style
 
@@ -168,7 +168,7 @@ ffmpeg -y -i <input> \
 - Adjust `y_position` — `height * 0.80` puts it in the lower fifth. Use `height * 0.85` for lower, `height * 0.70` for higher.
 
 ### Important notes
-- This skill requires `ffmpeg-full` with drawtext/libfreetype/libfontconfig support
+- This skill requires `ffmpeg` with drawtext/libfreetype/libfontconfig support (standard Homebrew `ffmpeg` includes this)
 - The font is resolved via fontconfig by name (`font='Big Shoulders Display'`), NOT by file path — `fontfile=` is silently ignored when fontconfig is enabled and falls back to Verdana
 - The font file `BigShouldersDisplay-Bold.ttf` must be installed at `~/Library/Fonts/` for fontconfig to find it
 - The black box automatically sizes to fit the text — it is not a fixed-width bar

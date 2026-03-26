@@ -33,8 +33,7 @@ Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocapti
 # Standard ffmpeg (used for steps 1–5)
 brew install ffmpeg
 
-# ffmpeg-full with drawtext/libfreetype support (required for step 6: captions)
-brew install homebrew-ffmpeg/ffmpeg/ffmpeg-full
+# Standard ffmpeg already includes drawtext/libfreetype/libfontconfig (no separate tap needed)
 
 # whisper.cpp CLI for transcription (steps 2 and 6)
 brew install whisper-cpp
@@ -82,7 +81,7 @@ The pipeline expects the font at:
 ~/Library/Fonts/BigShouldersDisplay-Bold.ttf
 ```
 
-**Important**: `ffmpeg-full` uses fontconfig (`--enable-libfontconfig`) to resolve fonts by name. The drawtext filter must use `font='Big Shoulders Display'`, NOT `fontfile='/path/to/file.ttf'`. The `fontfile` parameter is silently ignored when fontconfig is enabled, causing a fallback to Verdana (which is wider and breaks the caption width constraints). After installing the font, run `fc-cache -fv` to update the fontconfig cache.
+**Important**: The drawtext filter uses fontconfig to resolve fonts by name. Use `font='Big Shoulders Display'`, NOT `fontfile='/path/to/file.ttf'`. The `fontfile` parameter may be silently ignored, causing a fallback to Verdana (which is wider and breaks the caption width constraints). After installing the font, run `fc-cache -fv` to update the fontconfig cache.
 
 ### Verify everything
 
@@ -92,8 +91,8 @@ Quick check that all prerequisites are in place:
 # ffmpeg (standard)
 which ffmpeg && ffmpeg -version | head -1
 
-# ffmpeg-full with drawtext
-ls /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
+# ffmpeg drawtext support
+ffmpeg -filters 2>/dev/null | grep drawtext
 
 # whisper-cli
 which whisper-cli

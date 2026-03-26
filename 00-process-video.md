@@ -44,7 +44,7 @@ Examples:
 
 ### Prerequisites
 - `ffmpeg` (standard) for steps 1-5
-- `ffmpeg-full` at `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` for step 6 (captions, with drawtext/libfreetype support) — not needed if `-nocaptions` is used
+- Standard Homebrew `ffmpeg` includes drawtext/libfreetype/libfontconfig support for captions
 - `whisper-cli` with model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
 - `opencv-python-headless` (pip)
 - Big Shoulders Display Bold 700 font installed at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf` — resolved via fontconfig by name (`font='Big Shoulders Display'`), not by file path — not needed if `-nocaptions` is used
@@ -92,11 +92,6 @@ if secondaries:
 
 # 6. Captions prerequisites (only if captions are enabled)
 if not nocaptions:
-    # ffmpeg with drawtext support
-    ffmpeg_full = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"
-    if not os.path.exists(ffmpeg_full):
-        errors.append(f"ffmpeg-full not found at {ffmpeg_full}. Install with: brew install homebrew-ffmpeg/ffmpeg/ffmpeg-full")
-
     # Font file (must be installed for fontconfig to find it by name)
     font_path = os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-Bold.ttf")
     if not os.path.exists(font_path):
@@ -200,7 +195,7 @@ If captions are enabled (the default):
 - Font size calculated from **target** dimensions (not source): `target_width * 0.0495`, centered at `target_height * 0.80`
 - For `-portrait`: target is 1080x1920, font size from `target_width * 0.065` (larger relative to narrow frame), centered at `target_height * 0.75` (higher to avoid thumb zone)
 - If downscaling, prepend appropriate `scale=` filter to the filter chain before drawtext filters
-- **Must use ffmpeg-full** (`/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`) for drawtext filter
+- Uses standard `ffmpeg` (drawtext filter with libfreetype/libfontconfig)
 - Output as `_final.mp4` (always mp4 regardless of input format)
 
 ### Output
