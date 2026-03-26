@@ -1,6 +1,6 @@
 ---
 name: process-video
-description: Run the full 7-step video editing pipeline on a raw talking-head video to produce a polished final output
+description: Run the full 8-step video editing pipeline on a raw talking-head video to produce a polished final output
 user_invocable: true
 metadata:
   tags: video, pipeline, editing, automation, ffmpeg
@@ -176,7 +176,14 @@ After completion, report:
 - Whether captions were included or skipped
 - Confirm all steps completed
 
-#### Step 7: Clean Artifacts (`/clean-artifacts`)
+#### Step 7: Review Final Output
+- Open the final video for the user to review: `open <name>_final.mp4`
+- Report the pipeline summary (duration, time saved, zoom sections, captions status)
+- Ask the user to confirm they're happy with the result
+- If they approve, proceed to Step 8 (cleanup)
+- If they want changes, stop here — all intermediate files are preserved so individual steps can be re-run
+
+#### Step 8: Clean Artifacts (`/clean-artifacts`)
 - Delete intermediate files: `_trimmed`, `_trimmed_sections.json`, `_zoomed`, `_colorcorrected`, `_mastered`, `_captioned`
 - Keep only the original `<name>.<ext>` and `<name>_final.mp4`
 - Report number of files deleted and disk space recovered

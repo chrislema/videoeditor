@@ -177,14 +177,14 @@ Key details:
 
 ```bash
 ffmpeg -y -i <input> \
-  -/filter_complex /tmp/zoom_filter_$$.txt \
+  -filter_complex_script /tmp/zoom_filter_$$.txt \
   -map "[outv]" -map "[outa]" \
   -c:v libx264 -preset fast -crf 18 \
   -c:a aac -b:a 192k \
   <output>
 ```
 
-Note: Use `-/filter_complex <file>` for ffmpeg 8.x+. For older ffmpeg, use `-filter_complex_script <file>`.
+Note: Use `-filter_complex_script <file>` to pass the filter from a file — this works across all ffmpeg versions. (ffmpeg 8.x+ also accepts `-/filter_complex <file>` as shorthand.)
 
 #### Step 5: Report results
 

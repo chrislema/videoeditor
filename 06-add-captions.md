@@ -20,7 +20,7 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 ### Parameters
 The user may optionally specify:
 - **input**: Path to the video file (if not provided, ask)
-- **output**: Path for the output file (default: `<input_basename>_captioned.<ext>`)
+- **output**: Path for the output file (default: `<input_basename>_captioned.<ext>`). When called from `/process-video`, the pipeline passes `<name>_final.mp4` as the output path.
 - **resolution**: `-HD` (1920x1080), `-4K` (keep source), or `-portrait` (1080x1920). Default: `-HD`
 - **max_words**: Maximum words per caption line (default: 6 for landscape, 3 for portrait)
 - **target_width**: Target percentage of video width for text (default: 80%)
@@ -134,7 +134,7 @@ Write the full filter chain to the temp file, then render:
 
 ```bash
 ffmpeg -y -i <input> \
-  -/filter_complex /tmp/caption_filter_$$.txt \
+  -filter_complex_script /tmp/caption_filter_$$.txt \
   -c:v libx264 -preset fast -crf 18 \
   -c:a copy \
   <output>

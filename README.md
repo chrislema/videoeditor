@@ -1,6 +1,6 @@
 # Video Editor — Claude Code Skills Pipeline
 
-A 7-step automated video editing pipeline built as Claude Code skills. Designed for talking-head videos — takes a raw recording and produces a polished final output with silence removed, dynamic zoom, color correction, audio mastering, and burned-in captions.
+An 8-step automated video editing pipeline built as Claude Code skills. Designed for talking-head videos — takes a raw recording and produces a polished final output with silence removed, dynamic zoom, color correction, audio mastering, and burned-in captions.
 
 ## What it does
 
@@ -21,7 +21,9 @@ Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocapti
 
 6. **Add Captions** — Transcribes again with whisper-cli and burns in captions using ffmpeg's drawtext filter. White text on a 70% opacity black box, Big Shoulders Display Bold 700. For landscape: 6-word ALL CAPS chunks at 80% of frame height. For `-portrait`: 3-word chunks with larger relative font, positioned at 75% height to avoid the mobile thumb zone.
 
-7. **Clean Artifacts** — Deletes all intermediate files (`_trimmed`, `_zoomed`, `_colorcorrected`, `_mastered`, `_sections.json`), keeping only the original and `_final.mp4`.
+7. **Review Final Output** — Opens the final video for review. If you're happy, proceed to cleanup. If not, all intermediate files are preserved so you can re-run individual steps.
+
+8. **Clean Artifacts** — Deletes all intermediate files (`_trimmed`, `_zoomed`, `_colorcorrected`, `_mastered`, `_sections.json`), keeping only the original and `_final.mp4`.
 
 ## Prerequisites
 
