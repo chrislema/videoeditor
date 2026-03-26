@@ -121,9 +121,9 @@ def find_offset(primary_wav_path, secondary_wav_path):
 
 **Confidence threshold**: If confidence is below 0.15, warn the user that the sync may be unreliable. Below 0.05, stop and ask the user to verify the files contain overlapping audio.
 
-#### Step 4: Calculate common overlap
+#### Step 4: Calculate common overlap and trim primary only
 
-All feeds must be trimmed to the time range where all cameras were recording simultaneously.
+Calculate the time range where all cameras were recording simultaneously. Trim only the **primary** to this range (stream copy). Secondaries are **not trimmed** — they stay as original files.
 
 ```python
 def calculate_overlap(primary_duration, secondaries_info):
@@ -131,13 +131,8 @@ def calculate_overlap(primary_duration, secondaries_info):
 
     secondaries_info: list of (offset, duration) tuples for each secondary.
 
-    Returns (primary_start, primary_end, secondary_starts) where:
-      - primary_start/end are times in primary's timeline
-      - secondary_starts[i] is the corresponding start time in secondary i's timeline
+    Returns (primary_start, primary_end, overlap_duration).
     """
-    # In primary's timeline:
-    #   Primary spans [0, primary_duration]
-    #   Secondary i spans [offset_i, offset_i + duration_i]
     common_start = 0.0
     common_end = primary_duration
 
@@ -148,50 +143,63 @@ def calculate_overlap(primary_duration, secondaries_info):
     if common_end <= common_start:
         raise ValueError("No overlapping time range found — feeds may not be from the same recording")
 
-    # Convert common range to each secondary's timeline
-    secondary_starts = []
-    for offset, duration in secondaries_info:
-        sec_start = common_start - offset
-        secondary_starts.append(sec_start)
-
-    overlap_duration = common_end - common_start
-    return common_start, common_end, secondary_starts, overlap_duration
+    return common_start, common_end, common_end - common_start
 ```
 
-#### Step 5: Trim all feeds to common overlap
-
-Use stream copy (no re-encoding) for speed. Strip audio from secondaries with `-an`.
+Trim the primary to the overlap range:
 
 ```bash
-# Trim primary — keep video and audio
+# Trim primary only — keep video and audio
 ffmpeg -y -ss <common_start> -to <common_end> -i <primary> \
   -c copy -avoid_negative_ts make_zero \
   <primary_basename>_synced.mp4
-
-# Trim each secondary — keep video only, strip audio
-ffmpeg -y -ss <secondary_start> -to <secondary_end> -i <secondary> \
-  -c:v copy -an -avoid_negative_ts make_zero \
-  <secondary_basename>_synced.mp4
 ```
 
-#### Step 6: Verify sync
+**Do NOT trim the secondaries.** They stay as original files. The produce-zoom step will extract from them at the correct timestamps during re-encoding, which gives frame-accurate alignment without keyframe snapping issues.
 
-Confirm the synced files have matching durations (within one frame).
+#### Step 5: Write sync manifest
+
+Write a JSON manifest that records everything downstream steps need to find secondary footage for any moment in the synced primary's timeline.
 
 ```python
-primary_synced_dur = get_duration(primary_synced_path)
-for sec_synced_path in secondary_synced_paths:
-    sec_synced_dur = get_duration(sec_synced_path)
-    diff = abs(primary_synced_dur - sec_synced_dur)
-    fps = 30  # assume 30fps; could probe actual fps
-    frame_dur = 1.0 / fps
-    if diff > frame_dur:
-        print(f"WARNING: Duration mismatch of {diff:.3f}s between primary and {sec_synced_path}")
-    else:
-        print(f"Sync verified: durations match within 1 frame ({diff*1000:.1f}ms)")
+import json
+
+manifest = {
+    "primary_original": str(primary_path),
+    "primary_synced": str(synced_primary_path),
+    "overlap": {
+        "primary_start": common_start,
+        "primary_end": common_end,
+        "duration": overlap_duration
+    },
+    "secondaries": []
+}
+
+for i, (sec_path, offset, confidence) in enumerate(secondary_results):
+    manifest["secondaries"].append({
+        "file": str(sec_path),
+        "sync_offset": offset,
+        "confidence": confidence,
+        "index": i + 1  # secondary_1, secondary_2
+    })
+
+manifest_path = primary_path.replace(".mp4", "_sync_manifest.json")
+with open(manifest_path, "w") as f:
+    json.dump(manifest, f, indent=2)
 ```
 
-#### Step 7: Clean up temp files
+The manifest enables timestamp mapping. For any time `t` in the synced primary's timeline, the corresponding time in a secondary's original file is:
+
+```python
+secondary_time = t + manifest["overlap"]["primary_start"] - secondary["sync_offset"]
+```
+
+This formula works because:
+- `t` is relative to the synced primary (which starts at `overlap.primary_start` in the original primary's timeline)
+- `t + primary_start` converts to original primary time
+- Subtracting `sync_offset` converts from primary time to secondary time
+
+#### Step 6: Clean up temp files
 
 Delete the extracted WAV files:
 ```bash
@@ -201,9 +209,8 @@ rm -f /tmp/sync_primary_$PID.wav /tmp/sync_sec*_$PID.wav
 ### Output
 
 - `<primary_basename>_synced.mp4` — primary video trimmed to common overlap, audio preserved
-- `<secondary_basename>_synced.mp4` — each secondary trimmed to common overlap, audio stripped (no audio track)
-
-All output files go in the same directory as the input files.
+- `<primary_basename>_sync_manifest.json` — manifest with offsets and secondary file paths
+- Secondary files are **not modified** — they stay as-is in their original location
 
 ### Report
 
@@ -212,15 +219,15 @@ Print:
 - Correlation confidence for each secondary
 - Original duration of each feed
 - Common overlap duration
-- Time trimmed from the start and end of each feed
-- Output file paths
+- Time trimmed from the start and end of the primary
+- Timestamp mapping formula for verification
+- Manifest file path
 
 ### Important notes
 
 - **Audio required for sync**: All cameras must have captured audible room audio for cross-correlation to work. If a secondary has no audio track, this method won't work — the user would need to provide the offset manually (e.g., from a clap/slate).
 - **Same room, same event**: This assumes all cameras were recording the same audio event in the same room. It will not work for unrelated recordings.
 - **30-second correlation window**: Uses a 30-second chunk for speed. For recordings under 60 seconds, the full secondary audio is used instead.
-- **Stream copy**: Trimming uses `-c copy` / `-c:v copy` to avoid re-encoding. This means the trim points snap to the nearest keyframe. For talking-head video this is fine — the error is typically under 0.5 seconds and consistent across all feeds.
-- **Secondary audio is stripped**: The `-an` flag removes the audio track entirely from secondary outputs. Only the primary's audio track is kept for the final edit.
-- **Output is always .mp4**: Regardless of input format, synced outputs are .mp4 for pipeline compatibility.
-- **Frame rate mismatch**: If cameras recorded at different frame rates, ffmpeg will preserve each file's native frame rate during trim. The produce-zoom step later handles any frame rate normalization during re-encoding.
+- **Only the primary is trimmed.** The primary is trimmed with stream copy to the overlap range. Keyframe snapping on this trim is fine — the synced primary becomes the reference timeline. All downstream timestamps are relative to it.
+- **Secondaries stay untouched.** No trimming, no re-encoding, no stream copy. The produce-zoom step extracts from the original secondary files at frame-accurate timestamps during its re-encoding pass. This avoids keyframe alignment issues entirely.
+- **The manifest is the sync data.** Downstream steps (produce-zoom) read the manifest to find secondary files and compute timestamps. The manifest travels with the synced primary through the pipeline.

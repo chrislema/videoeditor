@@ -6,7 +6,7 @@ An 8-step automated video editing pipeline built as Claude Code skills. Designed
 
 Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocaptions]` runs the full pipeline. Output defaults to **1080p HD** unless another flag is specified. Flags can be combined in any order.
 
-1. **Remove Silence** — Detects silent gaps longer than 0.5s using ffmpeg's `silencedetect` and trims them down to 0.3s natural pauses. Extracts segments with stream copy (no re-encoding) and concatenates via the concat demuxer.
+1. **Remove Silence** — Detects silent gaps longer than 0.5s using ffmpeg's `silencedetect` and trims them down to 0.3s natural pauses. Extracts segments with stream copy (no re-encoding) and concatenates via the concat demuxer. Also writes a segment map JSON recording which time ranges were kept, enabling downstream timestamp mapping for multi-angle workflows.
 
 2. **Label Sections** — Transcribes the trimmed video with whisper-cli, then segments the transcript into 3–6 second chunks. Each chunk is labeled based on rhetorical analysis:
    - **normal** (1.0x) — setup, context, transitions (~40%)
@@ -23,7 +23,7 @@ Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocapti
 
 7. **Review Final Output** — Opens the final video for review. If you're happy, proceed to cleanup. If not, all intermediate files are preserved so you can re-run individual steps.
 
-8. **Clean Artifacts** — Deletes all intermediate files (`_trimmed`, `_zoomed`, `_colorcorrected`, `_mastered`, `_sections.json`), keeping only the original and `_final.mp4`.
+8. **Clean Artifacts** — Deletes all intermediate files (`_synced`, `_sync_manifest.json`, `_segment_map.json`, `_trimmed`, `_zoomed`, `_colorcorrected`, `_mastered`, `_sections.json`), keeping only the original, all secondary camera originals, and `_final.mp4`.
 
 ## Prerequisites
 
@@ -126,38 +126,52 @@ These are Claude Code skills. Place the `.md` files in your Claude Code skills d
 /process-video myrecording.mp4 -portrait -nocaptions  # → Portrait, no captions
 ```
 
-### Multi-angle (2–3 cameras)
+### Multi-angle (2-3 cameras)
 
-For multi-angle edits, sync the feeds first, then run the pipeline with secondaries:
+For multi-angle edits, pass all camera files to `/process-video`:
 
 ```
-# Step 1: Sync all camera feeds (primary = the one with the quality mic)
-/sync-feeds main_camera.mp4 side_angle.mp4
+# Automatic multi-angle pipeline (primary + secondary)
+/process-video main_camera.mp4 side_angle.mp4
+/process-video main_camera.mp4 side_angle.mp4 -4K
+/process-video main_camera.mp4 angle2.mp4 angle3.mp4 -HD
+```
 
-# Step 2: Remove silence from all feeds together
-/remove-silence main_camera_synced.mp4 side_angle_synced.mp4
+Or run individual steps manually:
+
+```
+# Step 1: Sync feeds — outputs a manifest + trimmed primary only
+/sync-feeds main_camera.mp4 side_angle.mp4
+# Outputs: main_camera_synced.mp4 + main_camera_sync_manifest.json
+# Secondaries are NOT trimmed — they stay as original files
+
+# Step 2: Remove silence from the synced primary only (no secondary args)
+/remove-silence main_camera_synced.mp4
+# Outputs: main_camera_trimmed.mp4 + main_camera_segment_map.json
 
 # Step 3: Label sections on the primary
 /label-sections main_camera_trimmed.mp4
 
-# Step 4: Mark angle swaps (every 3rd normal → secondary)
-/swap-angles main_camera_trimmed_sections.json side_angle_trimmed.mp4
+# Step 4: Mark angle swaps using the sync manifest
+/swap-angles main_camera_trimmed_sections.json main_camera_sync_manifest.json
 
-# Step 5: Produce zoom (auto-detects multi-angle from the JSON)
+# Step 5: Produce zoom — reads manifest + segment map for secondary timestamps
 /produce-zoom main_camera_trimmed.mp4
 
-# Steps 6–10: Color, audio, captions, review, cleanup — same as single camera
+# Steps 6-8: Color, audio, captions, review, cleanup — same as single camera
 ```
 
-The secondary camera provides visual variety — every 3rd "normal" section cuts to the other angle at full frame (no zoom). Emphasis and critical sections always stay on the primary camera with their zoom treatment.
+The key design: **secondaries are never trimmed**. The sync manifest records offsets, and the segment map records which time ranges survived silence removal. Produce-zoom uses both to compute the exact timestamps to extract from the original secondary files during its re-encoding pass. This gives frame-accurate alignment without keyframe snapping issues.
+
+The secondary camera provides visual variety -- every 3rd "normal" section cuts to the other angle at full frame (no zoom). Emphasis and critical sections always stay on the primary camera with their zoom treatment.
 
 ### Individual steps
 
 ```
 /sync-feeds primary.mp4 angle2.mp4 [angle3.mp4]
-/remove-silence myrecording.mp4 [angle2_synced.mp4]
+/remove-silence myrecording.mp4
 /label-sections myrecording_trimmed.mp4
-/swap-angles sections.json angle2_trimmed.mp4
+/swap-angles sections.json manifest.json
 /produce-zoom myrecording_trimmed.mp4
 /correct-colors myrecording_zoomed.mp4
 /master-audio myrecording_colorcorrected.mp4
@@ -171,16 +185,18 @@ Each step appends a suffix and feeds into the next:
 
 ```
 myrecording.mp4
-  → myrecording_synced.mp4          (multi-angle only)
-  → myrecording_trimmed.mp4
-  → myrecording_trimmed_sections.json
-  → myrecording_zoomed.mp4
-  → myrecording_colorcorrected.mp4
-  → myrecording_mastered.mp4
-  → myrecording_final.mp4
+  → myrecording_synced.mp4              (multi-angle only, from sync-feeds)
+  → myrecording_sync_manifest.json      (multi-angle only, from sync-feeds)
+  → myrecording_trimmed.mp4             (from remove-silence)
+  → myrecording_segment_map.json        (from remove-silence)
+  → myrecording_trimmed_sections.json   (from label-sections)
+  → myrecording_zoomed.mp4              (from produce-zoom)
+  → myrecording_colorcorrected.mp4      (from correct-colors)
+  → myrecording_mastered.mp4            (from master-audio)
+  → myrecording_final.mp4               (from add-captions)
 ```
 
-After cleanup, only the original and `_final.mp4` remain.
+After cleanup, only the original, all secondary camera originals, and `_final.mp4` remain.
 
 ## Platform notes
 

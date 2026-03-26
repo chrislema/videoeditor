@@ -19,7 +19,6 @@ Use this skill when the user wants to remove silences, dead air, or long pauses 
 ### Parameters
 The user may optionally specify:
 - **input**: Path to the video file (if not provided, ask)
-- **secondaries**: Paths to secondary video files (synced angles, from `/sync-feeds`). When provided, the same silence cuts are applied to all secondary feeds using the primary's audio for detection. Secondary outputs are video-only (no audio).
 - **silence_threshold**: Minimum silence duration to detect (default: 0.5 seconds)
 - **pause_duration**: How much natural pause to leave behind (default: 0.3 seconds)
 - **noise_level**: dB threshold for silence detection (default: -30dB)
@@ -43,26 +42,33 @@ The user may optionally specify:
    - Concatenate all segments: `ffmpeg -f concat -safe 0 -i <list_file> -c copy <output>`
    - Clean up temp segment files after concatenation
 
-5. **Apply same cuts to secondary feeds** (only when secondaries are provided):
-   - Use the exact same segment time ranges from step 3 (detected on the primary's audio)
-   - For each secondary file, extract segments with: `ffmpeg -ss <start> -to <end> -i <secondary> -c:v copy -an -avoid_negative_ts make_zero /tmp/sec_seg_NNN.mp4`
-   - Note: `-an` strips audio since secondaries are video-only (audio was stripped by `/sync-feeds`)
-   - Concatenate each secondary's segments separately: `ffmpeg -f concat -safe 0 -i <list_file> -c:v copy -an <secondary_output>`
-   - Output as `<secondary_name>_trimmed.mp4`
+5. **Write segment map** JSON file alongside the trimmed output. The segment map records which time ranges from the input were kept, enabling downstream timestamp mapping (e.g., for produce-zoom to map trimmed timestamps back to original file timestamps).
 
-6. **Output** the trimmed file as `<original_name>_trimmed.<ext>` in the same directory. If secondaries were provided, their trimmed versions are also in the same directory.
+   Output: `<name>_segment_map.json` alongside `<name>_trimmed.mp4`
+
+   Format:
+   ```json
+   [
+     {"trimmed_start": 0.000, "trimmed_end": 5.200, "original_start": 0.000, "original_end": 5.200},
+     {"trimmed_start": 5.200, "trimmed_end": 10.800, "original_start": 6.500, "original_end": 12.100}
+   ]
+   ```
+
+   Each entry maps a contiguous range in the trimmed output back to its original position in the input file. The `trimmed_start` of each entry equals the `trimmed_end` of the previous entry (they are contiguous in the output). The `original_start`/`original_end` values are the actual timestamps from the input file.
+
+6. **Output** the trimmed file as `<original_name>_trimmed.<ext>` in the same directory, plus the segment map as `<original_name>_segment_map.json`.
 
 ### Important notes
 
 - The video stream index may not be `0:0` -- check `ffprobe` output. Audio and video stream indices vary per file.
 - Always use `[0:v]` and `[0:a]` in filter references to let ffmpeg pick the right streams.
 - Report the original duration, trimmed duration, and time saved.
-- **Multi-angle**: When secondaries are provided, silence detection runs only on the primary (it has the good audio). The same time segments are cut from all feeds, keeping them in sync. Secondary extractions use `-c:v copy -an` since they have no audio track.
+- **Segment map**: The segment map JSON is always written, even for single-camera workflows. It is cheap to produce and keeps the pipeline uniform. Downstream steps (like produce-zoom in multi-angle mode) use it to map trimmed timestamps back to original (synced primary) timestamps for extracting secondary footage at the correct position.
 
 ### Example Python script pattern
 
 ```python
-import re, subprocess
+import re, subprocess, json, os
 
 video = "<input_path>"
 output = "<output_path>"
@@ -108,7 +114,7 @@ for s, e in segments[1:]:
 segments = merged
 
 # Extract segments with stream copy (no re-encoding)
-import os, tempfile
+import tempfile, shutil
 tmpdir = tempfile.mkdtemp(prefix="silence_")
 seg_files = []
 
@@ -133,7 +139,25 @@ subprocess.run([
     "-i", concat_list, "-c", "copy", output
 ], check=True)
 
+# Build and write segment map
+segment_map = []
+trimmed_pos = 0.0
+for orig_start, orig_end in segments:
+    seg_duration = orig_end - orig_start
+    segment_map.append({
+        "trimmed_start": round(trimmed_pos, 6),
+        "trimmed_end": round(trimmed_pos + seg_duration, 6),
+        "original_start": round(orig_start, 6),
+        "original_end": round(orig_end, 6)
+    })
+    trimmed_pos += seg_duration
+
+# Write segment map JSON
+base_name = os.path.splitext(video)[0]
+segment_map_path = f"{base_name}_segment_map.json"
+with open(segment_map_path, "w") as f:
+    json.dump(segment_map, f, indent=2)
+
 # Clean up temp segments
-import shutil
 shutil.rmtree(tmpdir)
 ```

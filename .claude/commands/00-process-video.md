@@ -1,20 +1,22 @@
 ---
 name: process-video
-description: Run the full 8-step video editing pipeline on a raw talking-head video to produce a polished final output
+description: Run the full video editing pipeline on a raw talking-head video to produce a polished final output, with optional multi-angle support
 user_invocable: true
 metadata:
-  tags: video, pipeline, editing, automation, ffmpeg
+  tags: video, pipeline, editing, automation, ffmpeg, multi-angle
 ---
 
 ## When to use
 
-Use this skill when the user wants to run the full video editing pipeline on a raw video. Triggered by `/process-video <filename>` or requests like "process this video," "run the pipeline," or "edit this video."
+Use this skill when the user wants to run the full video editing pipeline on a raw video. Supports single-camera and multi-angle (2-3 cameras) workflows. Triggered by `/process-video <filename>` or requests like "process this video," "run the pipeline," or "edit this video."
 
 ## How to use
 
 ### Input
 
-The user provides a filename as an argument, optionally followed by one or more flags. If no filename is provided, ask for one. The file should be in the current working directory or an absolute path. Flags are case-insensitive and can be combined in any order.
+The user provides a filename as an argument, optionally followed by additional video files (secondary camera angles) and flags. If no filename is provided, ask for one. The file should be in the current working directory or an absolute path. Additional video file arguments after the primary are treated as secondary angles for multi-angle editing.
+
+Flags are case-insensitive and can be combined in any order.
 
 **Resolution flags** (mutually exclusive — last one wins if multiple are given):
 - `-HD` (default): Final output scaled to 1920x1080 (landscape 16:9)
@@ -25,17 +27,18 @@ The user provides a filename as an argument, optionally followed by one or more 
 **Option flags** (combinable with any resolution flag):
 - `-nocaptions`: Skip the captions step (step 6). The mastered video becomes the final output directly. Useful for videos where captions aren't needed or will be added separately.
 
-**Flag parsing**: Normalize all flags to lowercase before matching. `-HD`, `-hd`, `-Hd` are all equivalent. `-NoCaptions`, `-nocaptions`, `-NOCAPTIONS` are all equivalent. Flags can appear in any order after the filename.
+**Flag parsing**: Normalize all flags to lowercase before matching. `-HD`, `-hd`, `-Hd` are all equivalent. `-NoCaptions`, `-nocaptions`, `-NOCAPTIONS` are all equivalent. Flags can appear in any order after the filename. Arguments that are not flags and end in a video extension (`.mp4`, `.mov`, `.mkv`, `.webm`) are treated as secondary video files.
 
 Examples:
-- `/process-video testvideo.mp4` → HD output with captions
-- `/process-video testvideo.mp4 -HD` → HD output with captions
-- `/process-video testvideo.mp4 -4K` → 4K output with captions
-- `/process-video testvideo.mp4 -portrait` → Portrait output (1080x1920) with captions
-- `/process-video testvideo.mp4 -nocaptions` → HD output, no captions
-- `/process-video testvideo.mp4 -portrait -nocaptions` → Portrait output, no captions
-- `/process-video testvideo.mp4 -hd -nocaptions` → HD output, no captions
-- `/process-video testvideo.mp4 -4K -nocaptions` → 4K output, no captions
+- `/process-video testvideo.mp4` -> HD output with captions (single camera)
+- `/process-video testvideo.mp4 -HD` -> HD output with captions
+- `/process-video testvideo.mp4 -4K` -> 4K output with captions
+- `/process-video testvideo.mp4 -portrait` -> Portrait output (1080x1920) with captions
+- `/process-video testvideo.mp4 -nocaptions` -> HD output, no captions
+- `/process-video testvideo.mp4 -portrait -nocaptions` -> Portrait output, no captions
+- `/process-video testvideo.mp4 side_angle.mp4` -> Multi-angle HD output with captions
+- `/process-video testvideo.mp4 side_angle.mp4 -4K` -> Multi-angle 4K output
+- `/process-video testvideo.mp4 angle2.mp4 angle3.mp4 -HD` -> 3-camera multi-angle HD output
 
 ### Prerequisites
 - `ffmpeg` (standard) for steps 1-5
@@ -43,6 +46,7 @@ Examples:
 - `whisper-cli` with model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
 - `opencv-python-headless` (pip)
 - Big Shoulders Display Bold 700 font installed at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf` — resolved via fontconfig by name (`font='Big Shoulders Display'`), not by file path — not needed if `-nocaptions` is used
+- `scipy` and `numpy` (pip) — only required when secondary angles are provided (for audio cross-correlation sync)
 
 ### Pre-flight check
 
@@ -77,7 +81,14 @@ try:
 except subprocess.CalledProcessError:
     errors.append("opencv-python-headless not found. Install with: pip3 install opencv-python-headless")
 
-# 5. Captions prerequisites (only if captions are enabled)
+# 5. SciPy (only when secondaries are provided)
+if secondaries:
+    try:
+        subprocess.run([sys.executable, "-c", "import scipy"], capture_output=True, check=True)
+    except subprocess.CalledProcessError:
+        errors.append("scipy not found (required for multi-angle sync). Install with: pip3 install scipy numpy")
+
+# 6. Captions prerequisites (only if captions are enabled)
 if not nocaptions:
     # ffmpeg with drawtext support
     ffmpeg_full = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"
@@ -105,42 +116,67 @@ if errors:
 
 Run these steps in order. Each step takes the output of the previous step as input. All intermediate files go in the same directory as the input file.
 
-Given input `<name>.<ext>`:
+Given input `<name>.<ext>` and optional secondaries:
+
+#### Step 0 (multi-angle only): Sync Feeds (`/sync-feeds`)
+
+Only run this step when secondary video files are provided.
+
+- **Input**: `<name>.<ext>` (primary) + secondary video files
+- **Output**: `<name>_synced.mp4` (trimmed primary) + `<name>_sync_manifest.json`
+- Cross-correlate audio to find sync offsets for each secondary
+- Trim only the primary to the common overlap range
+- Write a sync manifest JSON with secondary file paths, offsets, and overlap info
+- Secondaries are NOT trimmed — they stay as original files
+- **From this point forward, use `<name>_synced.mp4` as the input** (replacing the raw primary)
 
 #### Step 1: Remove Silence (`/remove-silence`)
-- **Input**: `<name>.<ext>`
-- **Output**: `<name>_trimmed.<ext>`
+- **Input**: `<name>_synced.mp4` (if multi-angle) or `<name>.<ext>` (if single camera)
+- **Output**: `<name>_trimmed.mp4` + `<name>_segment_map.json`
 - Detect silences > 0.5s using `silencedetect=noise=-30dB:d=0.5`
 - Cut silences down to 0.3s natural pauses
 - Extract segments with `-c copy` (no re-encoding) and concatenate via concat demuxer
+- Write a segment map JSON recording which time ranges were kept (for downstream timestamp mapping)
+- Note: Only the primary is processed. Secondaries are not trimmed.
 
 #### Step 2: Label Sections (`/label-sections`)
-- **Input**: `<name>_trimmed.<ext>`
+- **Input**: `<name>_trimmed.mp4`
 - **Output**: `<name>_trimmed_sections.json`
 - Transcribe with whisper-cli
 - Break into sections: min 3s, max 6s per section
 - Label each section as normal (1.0x), emphasis (1.25x), or critical (1.6x) based on content analysis
 - ~40% normal, ~35% emphasis, ~25% critical
 
+#### Step 2.5 (multi-angle only): Swap Angles (`/swap-angles`)
+
+Only run this step when secondary video files were provided.
+
+- **Input**: `<name>_trimmed_sections.json` + `<name>_sync_manifest.json`
+- **Output**: `<name>_trimmed_sections.json` (updated in place with `source` fields)
+- Mark every 3rd normal section for a secondary camera angle
+- Add source fields to the sections JSON for produce-zoom to use
+
 #### Step 3: Produce Zoom (`/produce-zoom`)
-- **Input**: `<name>_trimmed.<ext>` + `<name>_trimmed_sections.json`
-- **Output**: `<name>_zoomed.<ext>`
+- **Input**: `<name>_trimmed.mp4` + `<name>_trimmed_sections.json`
+- **Multi-angle additional inputs**: `<name>_sync_manifest.json` + `<name>_segment_map.json`
+- **Output**: `<name>_zoomed.mp4`
 - **Resolution**: Pass the resolution flag (`-HD`, `-4K`, or `-portrait`) to this step.
 - Detect face position using OpenCV (10 sample frames, averaged)
 - For landscape: crop to zoom level centered on face, scale back to original resolution
 - For `-portrait`: crop a 9:16 region from the 16:9 source centered on face. Normal = head-to-waist (~85% height), emphasis = head-and-shoulders (~65% height), critical = tight face (~45% height). Face positioned in upper third with torso below.
+- For multi-angle: read the sync manifest and segment map to compute secondary file timestamps. Secondary sections use original (untrimmed) secondary files with mapped timestamps.
 - Render with libx264 CRF 18
 
 #### Step 4: Correct Colors (`/correct-colors`)
-- **Input**: `<name>_zoomed.<ext>`
-- **Output**: `<name>_colorcorrected.<ext>`
+- **Input**: `<name>_zoomed.mp4`
+- **Output**: `<name>_colorcorrected.mp4`
 - **Resolution**: Pass the resolution flag to this step. For `-portrait`, output is already 1080x1920 from step 3.
 - Apply: `colorbalance=rs=0.02:gs=-0.01:bs=-0.02,curves=m='0/0 0.25/0.20 0.75/0.82 1/1',eq=brightness=0.02:contrast=1.05:saturation=1.05`
 - Video re-encoded, audio copied
 
 #### Step 5: Master Audio (`/master-audio`)
-- **Input**: `<name>_colorcorrected.<ext>`
-- **Output**: `<name>_mastered.<ext>`
+- **Input**: `<name>_colorcorrected.mp4`
+- **Output**: `<name>_mastered.mp4`
 - Apply: `highpass=f=80,lowpass=f=14000,equalizer=f=3000:t=q:w=1.5:g=3,equalizer=f=200:t=q:w=1.0:g=2,acompressor=threshold=-21dB:ratio=3:attack=5:release=50,volume=0.6,loudnorm=I=-16:TP=-1.5:LRA=11`
 - Video copied, audio re-encoded AAC 192k
 
@@ -152,7 +188,7 @@ ffmpeg -y -i <name>_mastered.<ext> -c copy <name>_final.mp4
 ```
 
 If captions are enabled (the default):
-- **Input**: `<name>_mastered.<ext>`
+- **Input**: `<name>_mastered.mp4`
 - **Output**: `<name>_final.mp4`
 - **Resolution**: Pass the resolution flag (`-HD`, `-4K`, or `-portrait`) to this step. Default is `-HD` (1920x1080).
 - Transcribe with whisper-cli
@@ -174,6 +210,7 @@ After completion, report:
 - Time saved from silence removal
 - Number of zoom sections and label distribution
 - Whether captions were included or skipped
+- If multi-angle: number of secondary sections swapped, sync confidence
 - Confirm all steps completed
 
 #### Step 7: Review Final Output
@@ -184,8 +221,8 @@ After completion, report:
 - If they want changes, stop here — all intermediate files are preserved so individual steps can be re-run
 
 #### Step 8: Clean Artifacts (`/clean-artifacts`)
-- Delete intermediate files: `_trimmed`, `_trimmed_sections.json`, `_zoomed`, `_colorcorrected`, `_mastered`, `_captioned`
-- Keep only the original `<name>.<ext>` and `<name>_final.mp4`
+- Delete intermediate files: `_synced`, `_sync_manifest.json`, `_segment_map.json`, `_trimmed`, `_trimmed_sections.json`, `_zoomed`, `_colorcorrected`, `_mastered`, `_captioned`
+- Keep the original `<name>.<ext>`, all secondary camera originals, and `<name>_final.mp4`
 - Report number of files deleted and disk space recovered
 - No confirmation needed when called from this pipeline
 

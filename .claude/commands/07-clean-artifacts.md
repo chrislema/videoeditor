@@ -20,6 +20,9 @@ The base filename used in the pipeline. If not provided, infer from the `_final.
 
 Given a base name `<name>`, delete these intermediate files if they exist:
 
+- `<name>_synced.mp4` (from sync-feeds, multi-angle only)
+- `<name>_sync_manifest.json` (from sync-feeds, multi-angle only)
+- `<name>_segment_map.json` (from remove-silence)
 - `<name>_trimmed.mp4` (from step 1: remove-silence)
 - `<name>_trimmed_sections.json` (from step 2: label-sections)
 - `<name>_zoomed.mp4` (from step 3: produce-zoom)
@@ -29,14 +32,15 @@ Given a base name `<name>`, delete these intermediate files if they exist:
 
 ### Keep
 
-- `<name>.<ext>` — the original raw video
-- `<name>_final.mp4` — the finished output
+- `<name>.<ext>` -- the original raw video (primary)
+- All secondary camera original files (these are never modified by the pipeline)
+- `<name>_final.mp4` -- the finished output
 
 ### Confirmation
 
 Before deleting, list the files that will be removed and their total size. Ask the user to confirm unless this was called automatically from `/process-video`.
 
-When called from `/process-video`, proceed without asking — the user already opted into the full pipeline.
+When called from `/process-video`, proceed without asking -- the user already opted into the full pipeline.
 
 ### Report
 
