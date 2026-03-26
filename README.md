@@ -1,6 +1,6 @@
 # Video Editor — Claude Code Skills Pipeline
 
-An 8-step automated video editing pipeline built as Claude Code skills. Designed for talking-head videos — takes a raw recording and produces a polished final output with silence removed, dynamic zoom, color correction, audio mastering, and burned-in captions.
+An 8-step automated video editing pipeline built as Claude Code skills. Designed for talking-head videos — takes a raw recording and produces a polished final output with silence removed, dynamic zoom, color correction, audio mastering, and burned-in captions. Supports **multi-angle editing** with 2–3 cameras synced via audio cross-correlation.
 
 ## What it does
 
@@ -57,10 +57,10 @@ bash download-ggml-model.sh medium
 ### Python packages
 
 ```bash
-pip3 install opencv-python-headless
+pip3 install opencv-python-headless scipy numpy
 ```
 
-OpenCV is used for face detection in step 3 (produce-zoom). The `headless` variant is sufficient — no GUI needed.
+OpenCV is used for face detection in step 3 (produce-zoom). The `headless` variant is sufficient — no GUI needed. SciPy and NumPy are used for audio cross-correlation in multi-angle sync.
 
 ### Font
 
@@ -104,6 +104,9 @@ ls /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin
 # OpenCV
 python3 -c "import cv2; print(f'OpenCV {cv2.__version__}')"
 
+# SciPy (for multi-angle sync)
+python3 -c "import scipy; print(f'SciPy {scipy.__version__}')"
+
 # Font
 ls ~/Library/Fonts/BigShouldersDisplay-Bold.ttf
 ```
@@ -111,6 +114,8 @@ ls ~/Library/Fonts/BigShouldersDisplay-Bold.ttf
 ## Usage
 
 These are Claude Code skills. Place the `.md` files in your Claude Code skills directory and invoke:
+
+### Single camera
 
 ```
 /process-video myrecording.mp4              # → 1080p HD output (default)
@@ -121,11 +126,38 @@ These are Claude Code skills. Place the `.md` files in your Claude Code skills d
 /process-video myrecording.mp4 -portrait -nocaptions  # → Portrait, no captions
 ```
 
-Or run individual steps:
+### Multi-angle (2–3 cameras)
+
+For multi-angle edits, sync the feeds first, then run the pipeline with secondaries:
 
 ```
-/remove-silence myrecording.mp4
+# Step 1: Sync all camera feeds (primary = the one with the quality mic)
+/sync-feeds main_camera.mp4 side_angle.mp4
+
+# Step 2: Remove silence from all feeds together
+/remove-silence main_camera_synced.mp4 side_angle_synced.mp4
+
+# Step 3: Label sections on the primary
+/label-sections main_camera_trimmed.mp4
+
+# Step 4: Mark angle swaps (every 3rd normal → secondary)
+/swap-angles main_camera_trimmed_sections.json side_angle_trimmed.mp4
+
+# Step 5: Produce zoom (auto-detects multi-angle from the JSON)
+/produce-zoom main_camera_trimmed.mp4
+
+# Steps 6–10: Color, audio, captions, review, cleanup — same as single camera
+```
+
+The secondary camera provides visual variety — every 3rd "normal" section cuts to the other angle at full frame (no zoom). Emphasis and critical sections always stay on the primary camera with their zoom treatment.
+
+### Individual steps
+
+```
+/sync-feeds primary.mp4 angle2.mp4 [angle3.mp4]
+/remove-silence myrecording.mp4 [angle2_synced.mp4]
 /label-sections myrecording_trimmed.mp4
+/swap-angles sections.json angle2_trimmed.mp4
 /produce-zoom myrecording_trimmed.mp4
 /correct-colors myrecording_zoomed.mp4
 /master-audio myrecording_colorcorrected.mp4
@@ -139,6 +171,7 @@ Each step appends a suffix and feeds into the next:
 
 ```
 myrecording.mp4
+  → myrecording_synced.mp4          (multi-angle only)
   → myrecording_trimmed.mp4
   → myrecording_trimmed_sections.json
   → myrecording_zoomed.mp4

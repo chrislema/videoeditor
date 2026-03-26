@@ -19,6 +19,7 @@ Use this skill when the user wants to remove silences, dead air, or long pauses 
 ### Parameters
 The user may optionally specify:
 - **input**: Path to the video file (if not provided, ask)
+- **secondaries**: Paths to secondary video files (synced angles, from `/sync-feeds`). When provided, the same silence cuts are applied to all secondary feeds using the primary's audio for detection. Secondary outputs are video-only (no audio).
 - **silence_threshold**: Minimum silence duration to detect (default: 0.5 seconds)
 - **pause_duration**: How much natural pause to leave behind (default: 0.3 seconds)
 - **noise_level**: dB threshold for silence detection (default: -30dB)
@@ -42,13 +43,21 @@ The user may optionally specify:
    - Concatenate all segments: `ffmpeg -f concat -safe 0 -i <list_file> -c copy <output>`
    - Clean up temp segment files after concatenation
 
-5. **Output** the trimmed file as `<original_name>_trimmed.<ext>` in the same directory
+5. **Apply same cuts to secondary feeds** (only when secondaries are provided):
+   - Use the exact same segment time ranges from step 3 (detected on the primary's audio)
+   - For each secondary file, extract segments with: `ffmpeg -ss <start> -to <end> -i <secondary> -c:v copy -an -avoid_negative_ts make_zero /tmp/sec_seg_NNN.mp4`
+   - Note: `-an` strips audio since secondaries are video-only (audio was stripped by `/sync-feeds`)
+   - Concatenate each secondary's segments separately: `ffmpeg -f concat -safe 0 -i <list_file> -c:v copy -an <secondary_output>`
+   - Output as `<secondary_name>_trimmed.mp4`
+
+6. **Output** the trimmed file as `<original_name>_trimmed.<ext>` in the same directory. If secondaries were provided, their trimmed versions are also in the same directory.
 
 ### Important notes
 
 - The video stream index may not be `0:0` -- check `ffprobe` output. Audio and video stream indices vary per file.
 - Always use `[0:v]` and `[0:a]` in filter references to let ffmpeg pick the right streams.
 - Report the original duration, trimmed duration, and time saved.
+- **Multi-angle**: When secondaries are provided, silence detection runs only on the primary (it has the good audio). The same time segments are cut from all feeds, keeping them in sync. Secondary extractions use `-c:v copy -an` since they have no audio track.
 
 ### Example Python script pattern
 
