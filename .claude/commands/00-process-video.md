@@ -132,7 +132,7 @@ Only run this step when secondary video files are provided.
 - **Output**: `<name>_trimmed.mp4` + `<name>_segment_map.json`
 - Detect silences > 0.5s using `silencedetect=noise=-30dB:d=0.5`
 - Cut silences down to 0.3s natural pauses
-- Extract segments with `-c copy` (no re-encoding) and concatenate via concat demuxer
+- Join segments with re-encoding using trim/atrim filters (not stream copy — stream copy causes keyframe drift in the segment map and audio blips at boundaries)
 - Write a segment map JSON recording which time ranges were kept (for downstream timestamp mapping)
 - Note: Only the primary is processed. Secondaries are not trimmed.
 

@@ -6,7 +6,7 @@ An 8-step automated video editing pipeline built as Claude Code skills. Designed
 
 Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocaptions]` runs the full pipeline. Output defaults to **1080p HD** unless another flag is specified. Flags can be combined in any order.
 
-1. **Remove Silence** — Detects silent gaps longer than 0.5s using ffmpeg's `silencedetect` and trims them down to 0.3s natural pauses. Extracts segments with stream copy (no re-encoding) and concatenates via the concat demuxer. Also writes a segment map JSON recording which time ranges were kept, enabling downstream timestamp mapping for multi-angle workflows.
+1. **Remove Silence** — Detects silent gaps longer than 0.5s using ffmpeg's `silencedetect` and trims them down to 0.3s natural pauses. Joins segments using trim/atrim filters with re-encoding for frame-accurate cuts (stream copy is not used — it causes keyframe drift in the segment map and audio blips at boundaries). Also writes a segment map JSON recording which time ranges were kept, enabling downstream timestamp mapping for multi-angle workflows.
 
 2. **Label Sections** — Transcribes the trimmed video with whisper-cli, then segments the transcript into 3–6 second chunks. Each chunk is labeled based on rhetorical analysis:
    - **normal** (1.0x) — setup, context, transitions (~40%)

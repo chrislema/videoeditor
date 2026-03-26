@@ -39,20 +39,24 @@ width, height = map(int, probe.stdout.strip().split(","))
 
 #### Step 2: Transcribe with whisper
 
+Use whisper's `-ml` (max segment length) flag to get short, accurately-timed segments directly from whisper. This is critical — do NOT split whisper segments manually and distribute time evenly, as speech is not evenly paced and captions will drift ahead of the audio.
+
 ```bash
 ffmpeg -y -i <input> -ar 16000 -ac 1 -f wav /tmp/caption_whisper_$$.wav
-whisper-cli -m /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin -f /tmp/caption_whisper_$$.wav
+# -ml 35 for landscape (~6 words), -ml 20 for portrait (~3 words)
+whisper-cli -m /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin -ml <max_chars> -f /tmp/caption_whisper_$$.wav
 rm -f /tmp/caption_whisper_$$.wav
 ```
 
+Where `<max_chars>` is **35** for landscape (roughly 6 words) or **20** for portrait (roughly 3 words).
+
 Parse the `[HH:MM:SS.mmm --> HH:MM:SS.mmm] text` lines from output.
 
-#### Step 3: Break into caption events
+#### Step 3: Build caption events
 
-- Split each transcript segment into chunks of max **6 words** (landscape) or max **3 words** (portrait — narrower frame needs shorter lines)
+- Each whisper segment becomes one caption event (no further splitting needed — whisper's timestamps are audio-accurate)
 - Convert all text to UPPERCASE
-- Distribute the segment's time evenly across its chunks
-- Each chunk becomes a separate caption event with start/end time
+- Each segment's start/end time comes directly from whisper
 
 #### Step 4: Determine target dimensions and calculate font size
 

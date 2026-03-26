@@ -36,11 +36,19 @@ The user may optionally specify:
    - For each silence, keep `pause_duration / 2` seconds on each side
    - Merge overlapping or adjacent segments
 
-4. **Extract segments with stream copy** (no re-encoding):
-   - For each non-silent segment, extract to a temp file using `ffmpeg -ss <start> -to <end> -i <input> -c copy -avoid_negative_ts make_zero /tmp/seg_NNN.mp4`
-   - Write a concat demuxer list file: `file '/tmp/seg_000.mp4'\nfile '/tmp/seg_001.mp4'\n...`
-   - Concatenate all segments: `ffmpeg -f concat -safe 0 -i <list_file> -c copy <output>`
-   - Clean up temp segment files after concatenation
+4. **Join segments with re-encoding** using trim/atrim filters in a single ffmpeg pass. Do NOT use stream copy (`-c copy`) — stream copy snaps to keyframes, which causes cumulative timestamp drift in the segment map (critical for multi-angle) and audio blips at segment boundaries from overlapping content.
+   - Build a `filter_complex` with `trim`/`atrim` + `setpts`/`asetpts` for each segment, then concat:
+     ```
+     [0:v]trim=start=S1:end=E1,setpts=PTS-STARTPTS[v0];
+     [0:a]atrim=start=S1:end=E1,asetpts=PTS-STARTPTS[a0];
+     [0:v]trim=start=S2:end=E2,setpts=PTS-STARTPTS[v1];
+     [0:a]atrim=start=S2:end=E2,asetpts=PTS-STARTPTS[a1];
+     ...
+     [v0][a0][v1][a1]...concat=n=N:v=1:a=1[outv][outa]
+     ```
+   - Write the filter to a PID-unique temp file (e.g., `/tmp/silence_filter_{pid}.txt`)
+   - Render: `ffmpeg -y -i <input> -filter_complex_script <filter_file> -map "[outv]" -map "[outa]" -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k <output>`
+   - Delete the temp filter file after rendering
 
 5. **Write segment map** JSON file alongside the trimmed output. The segment map records which time ranges from the input were kept, enabling downstream timestamp mapping (e.g., for produce-zoom to map trimmed timestamps back to original file timestamps).
 
@@ -118,31 +126,30 @@ for s, e in segments[1:]:
         merged.append((s, e))
 segments = merged
 
-# Extract segments with stream copy (no re-encoding)
-import tempfile, shutil
-tmpdir = tempfile.mkdtemp(prefix="silence_")
-seg_files = []
-
+# Build filter_complex with trim/atrim for frame-accurate cuts
+filter_parts = []
 for i, (s, e) in enumerate(segments):
-    seg_path = os.path.join(tmpdir, f"seg_{i:04d}.mp4")
-    seg_files.append(seg_path)
-    subprocess.run([
-        "ffmpeg", "-y", "-ss", f"{s:.6f}", "-to", f"{e:.6f}",
-        "-i", video, "-c", "copy", "-avoid_negative_ts", "make_zero",
-        seg_path
-    ], check=True, capture_output=True)
+    filter_parts.append(f"[0:v]trim=start={s:.6f}:end={e:.6f},setpts=PTS-STARTPTS[v{i}];")
+    filter_parts.append(f"[0:a]atrim=start={s:.6f}:end={e:.6f},asetpts=PTS-STARTPTS[a{i}];")
 
-# Write concat list
-concat_list = os.path.join(tmpdir, "concat.txt")
-with open(concat_list, "w") as f:
-    for seg_path in seg_files:
-        f.write(f"file '{seg_path}'\n")
+concat_inputs = "".join(f"[v{i}][a{i}]" for i in range(len(segments)))
+filter_parts.append(f"{concat_inputs}concat=n={len(segments)}:v=1:a=1[outv][outa]")
 
-# Concatenate with stream copy
+filter_file = f"/tmp/silence_filter_{os.getpid()}.txt"
+with open(filter_file, "w") as f:
+    f.write("\n".join(filter_parts))
+
+# Render with re-encoding (frame-accurate, no keyframe drift)
 subprocess.run([
-    "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-    "-i", concat_list, "-c", "copy", output
-], check=True)
+    "ffmpeg", "-y", "-i", video,
+    "-filter_complex_script", filter_file,
+    "-map", "[outv]", "-map", "[outa]",
+    "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+    "-c:a", "aac", "-b:a", "192k",
+    output
+], check=True, capture_output=True)
+
+os.remove(filter_file)
 
 # Build and write segment map
 segment_map = []
@@ -165,7 +172,4 @@ if base_name.endswith("_synced"):
 segment_map_path = f"{base_name}_segment_map.json"
 with open(segment_map_path, "w") as f:
     json.dump(segment_map, f, indent=2)
-
-# Clean up temp segments
-shutil.rmtree(tmpdir)
 ```
