@@ -54,9 +54,10 @@ Parse the `[HH:MM:SS.mmm --> HH:MM:SS.mmm] text` lines from output.
 
 #### Step 3: Build caption events
 
-- Each whisper segment becomes one caption event (no further splitting needed — whisper's timestamps are audio-accurate)
+- Each whisper segment becomes **one caption event** — do NOT split a segment into sub-chunks with fabricated timestamps. Splitting a 15s segment into three 5s chunks assumes even pacing, but speech is not evenly paced. This causes cumulative drift, and by the end of the video captions will lag behind or overshoot the audio.
+- If a whisper segment has more words than the per-line max (6 landscape, 3 portrait), display all the words using **stacked lines** within that single caption event's time window. Use multiple drawtext filters at offset y-positions (see Step 5), all sharing the same `enable` time range. Never split the time.
 - Convert all text to UPPERCASE
-- Each segment's start/end time comes directly from whisper
+- Each segment's start/end time comes directly from whisper — trust these timestamps
 
 #### Step 4: Determine target dimensions and calculate font size
 

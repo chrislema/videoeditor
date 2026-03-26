@@ -182,15 +182,17 @@ cy = max(0, min(face_cy - ch // 2, height - ch))
 
 Portrait crops a 9:16 region from the 16:9 source. Since the source is wider than tall, the crop is always narrower than the source width. The zoom levels control how much of the source **height** is used, which determines the framing:
 
-- **normal** (head-to-waist): use ~85% of source height -> generous torso framing
-- **emphasis** (head-and-shoulders): use ~65% of source height -> tighter
+- **normal** (full frame): use 100% of source height -> no crop, establishes the scene
+- **emphasis** (head-and-shoulders): use ~70% of source height -> clear crop, noticeably tighter
 - **critical** (tight face): use ~45% of source height -> punched in on face
+
+The gap between levels must be visually obvious. The previous 85/65/45 split made normal and emphasis look too similar — viewers couldn't tell the difference. 100/70/45 creates three clearly distinct framings.
 
 ```python
 # Portrait height fractions per label (how much source height to use)
 portrait_height_frac = {
-    "normal": 0.85,
-    "emphasis": 0.65,
+    "normal": 1.0,
+    "emphasis": 0.70,
     "critical": 0.45,
 }
 

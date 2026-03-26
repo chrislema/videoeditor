@@ -79,6 +79,7 @@ Analyze the **content and rhetorical function** of each section and assign a lab
 
 #### Labeling guidelines
 
+- **The first section must always be normal (1.0x).** Never start a video zoomed in — establish the scene first with the widest framing.
 - The **first half** of most talks is setup — lean toward normal/emphasis
 - The **second half** typically has the payoff — more emphasis/critical
 - **Don't over-index on critical** — if everything is critical, nothing is. Aim for roughly 40% normal, 35% emphasis, 25% critical
