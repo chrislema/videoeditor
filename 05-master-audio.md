@@ -18,7 +18,7 @@ Use this skill when the user wants to master, clean up, or improve the audio on 
 ### Parameters
 The user may optionally specify:
 - **input**: Path to the video file (if not provided, ask)
-- **output**: Path for the output file (default: `<input_basename>_mastered.<ext>`)
+- **output**: Path for the output file (default: strip `_colorcorrected` from the input basename, then append `_mastered.<ext>` — e.g., `mainvideo_colorcorrected.mp4` → `mainvideo_mastered.mp4`)
 
 ### Default mastering chain
 

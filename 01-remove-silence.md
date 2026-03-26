@@ -56,7 +56,7 @@ The user may optionally specify:
 
    Each entry maps a contiguous range in the trimmed output back to its original position in the input file. The `trimmed_start` of each entry equals the `trimmed_end` of the previous entry (they are contiguous in the output). The `original_start`/`original_end` values are the actual timestamps from the input file.
 
-6. **Output** the trimmed file as `<original_name>_trimmed.<ext>` in the same directory, plus the segment map as `<original_name>_segment_map.json`.
+6. **Output** the trimmed file as `<base>_trimmed.<ext>` in the same directory, plus the segment map as `<base>_segment_map.json`. To compute `<base>`: take the input filename without extension, then strip any `_synced` suffix (so `mainvideo_synced.mp4` → base = `mainvideo`, outputs = `mainvideo_trimmed.mp4` + `mainvideo_segment_map.json`). This ensures consistent naming whether or not the pipeline includes a sync step.
 
 ### Important notes
 
@@ -71,7 +71,12 @@ The user may optionally specify:
 import re, subprocess, json, os
 
 video = "<input_path>"
-output = "<output_path>"
+# Derive base name: strip extension, then strip _synced suffix if present
+base_name = os.path.splitext(video)[0]
+if base_name.endswith("_synced"):
+    base_name = base_name[:-len("_synced")]
+ext = os.path.splitext(video)[1]
+output = f"{base_name}_trimmed{ext}"
 pause = 0.3
 noise = "-30dB"
 min_silence = 0.5
@@ -153,7 +158,10 @@ for orig_start, orig_end in segments:
     trimmed_pos += seg_duration
 
 # Write segment map JSON
+# Strip _synced suffix so multi-angle naming stays consistent
 base_name = os.path.splitext(video)[0]
+if base_name.endswith("_synced"):
+    base_name = base_name[:-len("_synced")]
 segment_map_path = f"{base_name}_segment_map.json"
 with open(segment_map_path, "w") as f:
     json.dump(segment_map, f, indent=2)

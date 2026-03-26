@@ -183,7 +183,8 @@ for i, (sec_path, offset, confidence) in enumerate(secondary_results):
         "index": i + 1  # secondary_1, secondary_2
     })
 
-manifest_path = primary_path.replace(".mp4", "_sync_manifest.json")
+base_name = os.path.splitext(primary_path)[0]
+manifest_path = f"{base_name}_sync_manifest.json"
 with open(manifest_path, "w") as f:
     json.dump(manifest, f, indent=2)
 ```

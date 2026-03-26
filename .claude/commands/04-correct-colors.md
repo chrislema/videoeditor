@@ -18,7 +18,7 @@ Use this skill when the user wants to color correct a video. Triggered by reques
 ### Parameters
 The user may optionally specify:
 - **input**: Path to the video file (if not provided, ask)
-- **output**: Path for the output file (default: `<input_basename>_colorcorrected.<ext>`)
+- **output**: Path for the output file (default: strip `_zoomed` from the input basename, then append `_colorcorrected.<ext>` — e.g., `mainvideo_zoomed.mp4` → `mainvideo_colorcorrected.mp4`)
 - **preset**: Which color preset to use (default: "warm-punch")
 
 ### Default preset: warm-punch

@@ -27,7 +27,9 @@ Flags are case-insensitive and can be combined in any order.
 **Option flags** (combinable with any resolution flag):
 - `-nocaptions`: Skip the captions step (step 6). The mastered video becomes the final output directly. Useful for videos where captions aren't needed or will be added separately.
 
-**Flag parsing**: Normalize all flags to lowercase before matching. `-HD`, `-hd`, `-Hd` are all equivalent. `-NoCaptions`, `-nocaptions`, `-NOCAPTIONS` are all equivalent. Flags can appear in any order after the filename. Arguments that are not flags and end in a video extension (`.mp4`, `.mov`, `.mkv`, `.webm`) are treated as secondary video files.
+**Flag parsing**: Normalize all flags to lowercase before matching. `-HD`, `-hd`, `-Hd` are all equivalent. `-NoCaptions`, `-nocaptions`, `-NOCAPTIONS` are all equivalent. Flags can appear in any order after the filename. Arguments that are not flags and end in a video extension (`.mp4`, `.mov`, `.mkv`, `.webm`, `.mpg`, `.avi`, `.m4v`) are treated as secondary video files.
+
+**Naming convention**: All intermediate and output files use the **original primary's base name** (filename without extension) as the prefix. For example, given `mainvideo.mp4`, every file in the pipeline starts with `mainvideo_`: `mainvideo_synced.mp4`, `mainvideo_trimmed.mp4`, `mainvideo_zoomed.mp4`, etc. Each step replaces (not appends to) the previous step's suffix. The `_synced` suffix from sync-feeds is stripped by remove-silence so it doesn't cascade into downstream names.
 
 Examples:
 - `/process-video testvideo.mp4` -> HD output with captions (single camera)

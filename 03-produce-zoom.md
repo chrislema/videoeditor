@@ -22,9 +22,9 @@ Use this skill when the user has a sections JSON file (from `/label-zoom-section
 The user may optionally specify:
 - **input**: Path to the primary video file (if not provided, infer from JSON metadata or ask)
 - **sections_json**: Path to the sections JSON file (if not provided, look for `<input_basename>_sections.json`). If the JSON contains `secondary_sources` in metadata and `source` fields on sections (from `/swap-angles`), multi-angle mode is enabled automatically.
-- **sync_manifest**: Path to the sync manifest JSON (from `/sync-feeds`). Required for multi-angle mode. If not provided, look for `<basename>_sync_manifest.json`.
-- **segment_map**: Path to the segment map JSON (from `/remove-silence`). Required for multi-angle mode. If not provided, look for `<basename>_segment_map.json`.
-- **output**: Path for the output file (default: `<input_basename>_zoomed.mp4`)
+- **sync_manifest**: Path to the sync manifest JSON (from `/sync-feeds`). Required for multi-angle mode. If not provided, first check the sections JSON metadata for `sync_manifest`; otherwise derive from the input basename by stripping `_trimmed` and looking for `<original_name>_sync_manifest.json` (e.g., input `mainvideo_trimmed.mp4` → look for `mainvideo_sync_manifest.json`).
+- **segment_map**: Path to the segment map JSON (from `/remove-silence`). Required for multi-angle mode. If not provided, derive from the input basename by stripping `_trimmed` and looking for `<original_name>_segment_map.json` (e.g., input `mainvideo_trimmed.mp4` → look for `mainvideo_segment_map.json`).
+- **output**: Path for the output file (default: strip `_trimmed` from the input basename, then append `_zoomed.mp4` — e.g., `mainvideo_trimmed.mp4` → `mainvideo_zoomed.mp4`)
 - **resolution**: `-HD` (default), `-4K`, or `-portrait` (1080x1920 vertical 9:16)
 
 ### Process

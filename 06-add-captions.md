@@ -20,7 +20,7 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 ### Parameters
 The user may optionally specify:
 - **input**: Path to the video file (if not provided, ask)
-- **output**: Path for the output file (default: `<input_basename>_captioned.<ext>`). When called from `/process-video`, the pipeline passes `<name>_final.mp4` as the output path.
+- **output**: Path for the output file. When called from `/process-video`, the pipeline passes `<name>_final.mp4` as the output path. When run standalone, default: strip `_mastered` from the input basename, then append `_final.mp4` — e.g., `mainvideo_mastered.mp4` → `mainvideo_final.mp4`.
 - **resolution**: `-HD` (1920x1080), `-4K` (keep source), or `-portrait` (1080x1920). Default: `-HD`
 - **max_words**: Maximum words per caption line (default: 6 for landscape, 3 for portrait)
 - **target_width**: Target percentage of video width for text (default: 80%)
