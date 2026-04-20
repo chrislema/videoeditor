@@ -160,7 +160,7 @@ Only run this step when secondary video files were provided.
 - **Resolution**: Pass the resolution flag (`-HD`, `-4K`, or `-portrait`) to this step.
 - Detect face position using OpenCV (10 sample frames, averaged)
 - For landscape: crop to zoom level centered on face, scale back to original resolution
-- For `-portrait`: crop a 9:16 region from the 16:9 source centered on face. Normal = head-to-waist (~85% height), emphasis = head-and-shoulders (~65% height), critical = tight face (~45% height). Face positioned in upper third with torso below.
+- For `-portrait`: crop a 9:16 region from the 16:9 source centered on face. Normal = full frame (100% height), emphasis = head-to-chest (~85% height), critical = head-and-shoulders (~70% height — the tightest framing in the ladder). Face positioned in upper third with torso below.
 - For multi-angle: read the sync manifest and segment map to compute secondary file timestamps. Secondary sections use original (untrimmed) secondary files with mapped timestamps.
 - Render with libx264 CRF 18
 

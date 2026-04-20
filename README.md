@@ -13,7 +13,7 @@ Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocapti
    - **emphasis** (1.25x) — key points, rhetorical questions, rising energy (~35%)
    - **critical** (1.6x) — thesis statements, punchlines, emotional peaks (~25%)
 
-3. **Produce Zoom** — Uses OpenCV's Haar cascade face detector across 10 sampled frames to find the average face position. For landscape: crops the frame to the corresponding zoom level centered on the face, then scales back to original resolution (normal = full frame, critical = tight face crop). For `-portrait`: crops a 9:16 region from the 16:9 source with the face in the upper third — normal = head-to-waist (~85% height), emphasis = head-and-shoulders (~65%), critical = tight face (~45%). Output is 1080x1920.
+3. **Produce Zoom** — Uses OpenCV's Haar cascade face detector across 10 sampled frames to find the average face position. For landscape: crops the frame to the corresponding zoom level centered on the face, then scales back to original resolution (normal = full frame, critical = tight face crop). For `-portrait`: crops a 9:16 region from the 16:9 source with the face in the upper third — normal = full frame (100% height), emphasis = head-to-chest (~85%), critical = head-and-shoulders (~70% — the tightest framing in the ladder). Output is 1080x1920.
 
 4. **Correct Colors** — Applies a "warm-punch" color grade tuned for indoor talking-head footage: subtle warm color balance shift, mild S-curve contrast, slight brightness and saturation lift.
 
