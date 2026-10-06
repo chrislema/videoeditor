@@ -203,9 +203,29 @@ If captions are enabled (the default):
 - Uses `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` (standard `ffmpeg` lacks drawtext)
 - Output as `_final.mp4` (always mp4 regardless of input format)
 
+#### Step 6.5: Save Transcript
+- **Input**: the whisper transcript from Step 2 (taken from `<name>_trimmed.mp4`, so it matches the words in the final video)
+- **Output**: `<original_filename_without_extension>.md` next to the original video. Use the original file's exact name and casing (e.g. `CollegeGradAdvice.mp4` → `CollegeGradAdvice.md`).
+- Purpose: a clean, readable transcript the user can paste into social posts or hand to claude.ai. It is a deliverable, not an intermediate — cleanup never deletes it.
+- Format:
+  ```markdown
+  # <Readable title from the filename, e.g. "College Grad Advice">
+
+  - **Video:** `<name>_final.mp4`
+  - **Length:** <m:ss of the final video>
+
+  <transcript as paragraphs>
+  ```
+- Cleanup rules (light touch — it should still read as the speaker's own words):
+  - Plain paragraphs, no timestamps. Break at changes of idea (roughly 2–5 sentences each).
+  - Fix punctuation, capitalization and sentence boundaries that whisper got wrong.
+  - Fix mis-heard names and products (e.g. "chat GBT" → "ChatGPT", "digital advisors" → "Digital Advisors", "digitaladvisors.ai").
+  - Drop stutters and immediate word repeats ("this has, this has" → "this has"), but do not rephrase, summarize or add anything.
+- If a `<name>.md` already exists, overwrite it (it was produced by a previous run of this pipeline).
+
 ### Output
 
-The final file is `<name>_final.mp4` in the same directory as the input.
+The final file is `<name>_final.mp4` in the same directory as the input, along with the transcript `<name>.md`.
 
 After completion, report:
 - Original duration vs final duration
@@ -224,7 +244,7 @@ After completion, report:
 
 #### Step 8: Clean Artifacts (`/clean-artifacts`)
 - Delete intermediate files: `_synced`, `_sync_manifest.json`, `_segment_map.json`, `_trimmed`, `_trimmed_sections.json`, `_zoomed`, `_colorcorrected`, `_mastered`, `_captioned`
-- Keep the original `<name>.<ext>`, all secondary camera originals, and `<name>_final.mp4`
+- Keep the original `<name>.<ext>`, all secondary camera originals, `<name>_final.mp4`, and the transcript `<name>.md`
 - Report number of files deleted and disk space recovered
 - No confirmation needed when called from this pipeline
 

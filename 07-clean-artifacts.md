@@ -35,6 +35,7 @@ Given a base name `<name>`, delete these intermediate files if they exist:
 - `<name>.<ext>` -- the original raw video (primary)
 - All secondary camera original files (these are never modified by the pipeline)
 - `<name>_final.mp4` -- the finished output
+- `<name>.md` -- the transcript saved in Step 6.5 of `/process-video` (a deliverable, never delete it)
 
 ### Confirmation
 

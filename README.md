@@ -21,9 +21,11 @@ Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocapti
 
 6. **Add Captions** — Transcribes again with whisper-cli and burns in captions using ffmpeg's drawtext filter. White text on a 70% opacity black box, Big Shoulders Display Bold 700. For landscape: 6-word ALL CAPS chunks at 80% of frame height. For `-portrait`: 3-word chunks with larger relative font, positioned at 75% height to avoid the mobile thumb zone.
 
+6.5. **Save Transcript** — Saves a clean, readable transcript as `<video name>.md` next to the original (e.g. `CollegeGradAdvice.md`), ready for social posts or pasting into claude.ai. Light cleanup only: punctuation, paragraphs, fixed product names, no rewording.
+
 7. **Review Final Output** — Opens the final video for review. If you're happy, proceed to cleanup. If not, all intermediate files are preserved so you can re-run individual steps.
 
-8. **Clean Artifacts** — Deletes all intermediate files (`_synced`, `_sync_manifest.json`, `_segment_map.json`, `_trimmed`, `_zoomed`, `_colorcorrected`, `_mastered`, `_sections.json`), keeping only the original, all secondary camera originals, and `_final.mp4`.
+8. **Clean Artifacts** — Deletes all intermediate files (`_synced`, `_sync_manifest.json`, `_segment_map.json`, `_trimmed`, `_zoomed`, `_colorcorrected`, `_mastered`, `_sections.json`), keeping only the original, all secondary camera originals, `_final.mp4`, and the transcript `.md`.
 
 ## Prerequisites
 

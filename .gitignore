@@ -8,3 +8,10 @@
 *.m4v
 *.wmv
 *.wav
+
+# Video transcripts (saved next to videos by /process-video). Skill .md files stay tracked.
+/*.md
+!/README.md
+!/0*-*.md
+!/swap-angles.md
+!/sync-feeds.md
