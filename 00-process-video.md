@@ -44,10 +44,10 @@ Examples:
 
 ### Prerequisites
 - `ffmpeg` (standard) for steps 1-5
-- Standard Homebrew `ffmpeg` includes drawtext/libfreetype/libfontconfig support for captions
+- `ffmpeg-full` at `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` for captions (standard Homebrew `ffmpeg` lacks the `drawtext` filter)
 - `whisper-cli` with model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
 - `opencv-python-headless` (pip)
-- Big Shoulders Display Bold 700 font installed at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf` — resolved via fontconfig by name (`font='Big Shoulders Display'`), not by file path — not needed if `-nocaptions` is used
+- Big Shoulders Display Bold 700 static font at `~/Library/Fonts/BigShouldersDisplay-700.ttf`, referenced with `fontfile=` — not needed if `-nocaptions` is used
 - `scipy` and `numpy` (pip) — only required when secondary angles are provided (for audio cross-correlation sync)
 
 ### Pre-flight check
@@ -92,15 +92,20 @@ if secondaries:
 
 # 6. Captions prerequisites (only if captions are enabled)
 if not nocaptions:
-    # Font file (must be installed for fontconfig to find it by name)
-    font_path = os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-Bold.ttf")
+    # drawtext-capable ffmpeg (standard Homebrew ffmpeg lacks drawtext)
+    ffmpeg_full = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"
+    ok = os.path.exists(ffmpeg_full) and "drawtext" in subprocess.run([ffmpeg_full, "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+    if not ok:
+        errors.append("ffmpeg-full with drawtext not found. Install with: brew install ffmpeg-full")
+
+    # Font file (referenced directly with fontfile=)
+    font_path = os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-700.ttf")
     if not os.path.exists(font_path):
         errors.append(f"Caption font not found at {font_path}. Download from Google Fonts: https://fonts.google.com/specimen/Big+Shoulders+Display")
 
-    # Verify fontconfig can resolve the font name
-    fc_result = subprocess.run(["fc-match", "Big Shoulders Display"], capture_output=True, text=True)
-    if "BigShoulder" not in fc_result.stdout:
-        errors.append(f"fontconfig cannot resolve 'Big Shoulders Display'. Got: {fc_result.stdout.strip()}. Run: fc-cache -fv")
+    # Verify it is a real font file (a bad download can save an HTML page as .ttf)
+    elif "Big Shoulders" not in subprocess.run(["fc-scan", "--format", "%{family}", font_path], capture_output=True, text=True).stdout:
+        errors.append(f"{font_path} is not a valid font file. Re-download the static Bold (700) TTF from Google Fonts.")
 
 if errors:
     print("Pre-flight check failed:")
@@ -142,7 +147,7 @@ Only run this step when secondary video files are provided.
 - Transcribe with whisper-cli
 - Break into sections: min 3s, max 6s per section
 - Label each section as normal (1.0x), emphasis (1.25x), or critical (1.6x) based on content analysis
-- ~40% normal, ~35% emphasis, ~25% critical
+- ~60% normal, ~30% emphasis, ~10% critical (by duration — critical only for the one or two real punchlines)
 
 #### Step 2.5 (multi-angle only): Swap Angles (`/swap-angles`)
 
@@ -160,7 +165,7 @@ Only run this step when secondary video files were provided.
 - **Resolution**: Pass the resolution flag (`-HD`, `-4K`, or `-portrait`) to this step.
 - Detect face position using OpenCV (10 sample frames, averaged)
 - For landscape: crop to zoom level centered on face, scale back to original resolution
-- For `-portrait`: crop a 9:16 region from the 16:9 source centered on face. Normal = full frame (100% height), emphasis = head-to-chest (~85% height), critical = head-and-shoulders (~70% height — the tightest framing in the ladder). Face positioned in upper third with torso below.
+- For `-portrait`: crop a 9:16 region from the 16:9 source centered on face. Normal = full frame (100% height), emphasis = 92% height, critical = 85% height (locked — tighter reads as an uncomfortable face crop). The crop never cuts off the top of the head; it keeps the head in frame and loses chest/shoulders as it zooms.
 - For multi-angle: read the sync manifest and segment map to compute secondary file timestamps. Secondary sections use original (untrimmed) secondary files with mapped timestamps.
 - Render with libx264 CRF 18
 
@@ -191,11 +196,11 @@ If captions are enabled (the default):
 - Transcribe with whisper-cli
 - For landscape: break into max 6 words per caption, ALL CAPS
 - For `-portrait`: break into max 3 words per caption (narrower frame), ALL CAPS
-- Big Shoulders Display Bold 700 via fontconfig (`font='Big Shoulders Display'`, NOT `fontfile=`), white text on black box (70% opacity)
+- Big Shoulders Display Bold 700 via `fontfile=~/Library/Fonts/BigShouldersDisplay-700.ttf` (NOT `font='Big Shoulders Display'`, which renders a thin weight), white text on black box (70% opacity)
 - Font size calculated from **target** dimensions (not source): `target_width * 0.0495`, centered at `target_height * 0.80`
 - For `-portrait`: target is 1080x1920, font size from `target_width * 0.065` (larger relative to narrow frame), centered at `target_height * 0.75` (higher to avoid thumb zone)
 - If downscaling, prepend appropriate `scale=` filter to the filter chain before drawtext filters
-- Uses standard `ffmpeg` (drawtext filter with libfreetype/libfontconfig)
+- Uses `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` (standard `ffmpeg` lacks drawtext)
 - Output as `_final.mp4` (always mp4 regardless of input format)
 
 ### Output

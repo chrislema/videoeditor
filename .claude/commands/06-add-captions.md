@@ -13,9 +13,9 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 ## How to use
 
 ### Prerequisites
-- `ffmpeg` must be installed with drawtext/libfreetype support (standard Homebrew `ffmpeg` includes this)
+- An `ffmpeg` with the `drawtext` filter. Standard Homebrew `ffmpeg` (8.1.x) does **not** include it — use `ffmpeg-full` at `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` (`brew install ffmpeg-full`). Check with `<ffmpeg> -hide_banner -filters | grep drawtext`.
 - `whisper-cli` must be installed with a model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
-- Big Shoulders Display Bold 700 font installed at `~/Library/Fonts/BigShouldersDisplay-Bold.ttf`. The font is resolved via fontconfig by name (`font='Big Shoulders Display'`), not by file path. Always use `font=` instead of `fontfile=`.
+- Big Shoulders Display Bold 700 static font at `~/Library/Fonts/BigShouldersDisplay-700.ttf`, referenced directly with `fontfile=`. Do NOT use `font='Big Shoulders Display'` — fontconfig resolves the family name to the variable font's thin default weight, and `:style=Bold` patterns fall back to a generic sans.
 
 ### Parameters
 The user may optionally specify:
@@ -123,7 +123,7 @@ for start, end, text in caption_events:
         escaped = escape_drawtext(line)
         line_y = start_y + li * line_height
         dt = (
-            f"drawtext=font='Big Shoulders Display'"
+            f"drawtext=fontfile={FONT_PATH}"
             f":text='{escaped}'"
             f":fontcolor=white"
             f":fontsize={font_size}"
@@ -166,7 +166,7 @@ ffmpeg -y -i <input> \
   <output>
 ```
 
-**Important**: Use `font='Big Shoulders Display'` (fontconfig name resolution), NOT `fontfile=` (which may be silently ignored and fall back to Verdana). Standard Homebrew `ffmpeg` includes drawtext with libfreetype and libfontconfig — no separate `ffmpeg-full` tap is needed.
+**Important**: Render with the drawtext-capable binary (`FFMPEG = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"`), and set `FONT_PATH = os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-700.ttf")`. Use `fontfile={FONT_PATH}`, NOT `font='Big Shoulders Display'` (name lookup picks the thin variable-font weight).
 
 ### Caption style
 
@@ -194,9 +194,9 @@ ffmpeg -y -i <input> \
 - Adjust `y_position` — `height * 0.80` puts it in the lower fifth. Use `height * 0.85` for lower, `height * 0.70` for higher.
 
 ### Important notes
-- This skill requires `ffmpeg` with drawtext/libfreetype/libfontconfig support (standard Homebrew `ffmpeg` includes this)
-- The font is resolved via fontconfig by name (`font='Big Shoulders Display'`), NOT by file path — `fontfile=` is silently ignored when fontconfig is enabled and falls back to Verdana
-- The font file `BigShouldersDisplay-Bold.ttf` must be installed at `~/Library/Fonts/` for fontconfig to find it
+- This skill requires an `ffmpeg` with drawtext — standard Homebrew `ffmpeg` lacks it; use `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`
+- The font is referenced by file (`fontfile=`), not by name — name lookup through fontconfig resolves to the wrong weight
+- The font file must be a real TTF at `~/Library/Fonts/BigShouldersDisplay-700.ttf` (verify with `fc-scan` — a bad download can save an HTML page with a .ttf name)
 - The black box automatically sizes to fit the text — it is not a fixed-width bar
 - **Never use newline characters (`\n`) in drawtext text.** Big Shoulders Display renders `\n` as a visible tofu glyph (X-in-a-box). For multi-line captions, use separate stacked drawtext filters — one per line, each with the same `enable` time range but offset `y` positions.
 - This skill should run after all other video processing (silence removal, zoom, color, audio mastering)

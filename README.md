@@ -9,11 +9,11 @@ Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocapti
 1. **Remove Silence** — Detects silent gaps longer than 0.5s using ffmpeg's `silencedetect` and trims them down to 0.3s natural pauses. Joins segments using trim/atrim filters with re-encoding for frame-accurate cuts (stream copy is not used — it causes keyframe drift in the segment map and audio blips at boundaries). Also writes a segment map JSON recording which time ranges were kept, enabling downstream timestamp mapping for multi-angle workflows.
 
 2. **Label Sections** — Transcribes the trimmed video with whisper-cli, then segments the transcript into 3–6 second chunks. Each chunk is labeled based on rhetorical analysis:
-   - **normal** (1.0x) — setup, context, transitions (~40%)
-   - **emphasis** (1.25x) — key points, rhetorical questions, rising energy (~35%)
-   - **critical** (1.6x) — thesis statements, punchlines, emotional peaks (~25%)
+   - **normal** (1.0x) — setup, context, transitions (~60%)
+   - **emphasis** (1.25x) — key points, rhetorical questions, rising energy (~30%)
+   - **critical** (1.6x) — thesis statements, punchlines, emotional peaks (~10%, by duration)
 
-3. **Produce Zoom** — Uses OpenCV's Haar cascade face detector across 10 sampled frames to find the average face position. For landscape: crops the frame to the corresponding zoom level centered on the face, then scales back to original resolution (normal = full frame, critical = tight face crop). For `-portrait`: crops a 9:16 region from the 16:9 source with the face in the upper third — normal = full frame (100% height), emphasis = head-to-chest (~85%), critical = head-and-shoulders (~70% — the tightest framing in the ladder). Output is 1080x1920.
+3. **Produce Zoom** — Uses OpenCV's Haar cascade face detector across 10 sampled frames to find the average face position. For landscape: crops the frame to the corresponding zoom level centered on the face, then scales back to original resolution (normal = full frame, critical = tight face crop). For `-portrait`: crops a 9:16 region from the 16:9 source centered on the face — normal = full frame (100% height), emphasis = 92%, critical = 85%. The crop never cuts off the top of the head, so zooms read as a gentle push in. Output is 1080x1920.
 
 4. **Correct Colors** — Applies a "warm-punch" color grade tuned for indoor talking-head footage: subtle warm color balance shift, mild S-curve contrast, slight brightness and saturation lift.
 
@@ -33,7 +33,8 @@ Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocapti
 # Standard ffmpeg (used for steps 1–5)
 brew install ffmpeg
 
-# Standard ffmpeg already includes drawtext/libfreetype/libfontconfig (no separate tap needed)
+# ffmpeg-full for captions (step 6) — standard ffmpeg lacks the drawtext filter
+brew install ffmpeg-full   # used via /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
 
 # whisper.cpp CLI for transcription (steps 2 and 6)
 brew install whisper-cpp
@@ -73,15 +74,18 @@ curl -L -o /tmp/BigShouldersDisplay.zip \
 # Extract and install the 700 weight
 unzip /tmp/BigShouldersDisplay.zip -d /tmp/BigShouldersDisplay
 cp /tmp/BigShouldersDisplay/static/BigShouldersDisplay-Bold.ttf \
-  ~/Library/Fonts/BigShouldersDisplay-Bold.ttf
+  ~/Library/Fonts/BigShouldersDisplay-700.ttf
+
+# Confirm it's a real font (a failed download can save an HTML page as .ttf)
+fc-scan --format "%{family} | %{style}\n" ~/Library/Fonts/BigShouldersDisplay-700.ttf
 ```
 
 The pipeline expects the font at:
 ```
-~/Library/Fonts/BigShouldersDisplay-Bold.ttf
+~/Library/Fonts/BigShouldersDisplay-700.ttf
 ```
 
-**Important**: The drawtext filter uses fontconfig to resolve fonts by name. Use `font='Big Shoulders Display'`, NOT `fontfile='/path/to/file.ttf'`. The `fontfile` parameter may be silently ignored, causing a fallback to Verdana (which is wider and breaks the caption width constraints). After installing the font, run `fc-cache -fv` to update the fontconfig cache.
+**Important**: Reference the font by file with `fontfile=~/Library/Fonts/BigShouldersDisplay-700.ttf` (expanded to an absolute path). Do NOT use `font='Big Shoulders Display'` — fontconfig resolves the family name to the variable font's thin default weight, and `:style=Bold` patterns fall back to a generic sans.
 
 ### Verify everything
 
@@ -91,8 +95,8 @@ Quick check that all prerequisites are in place:
 # ffmpeg (standard)
 which ffmpeg && ffmpeg -version | head -1
 
-# ffmpeg drawtext support
-ffmpeg -filters 2>/dev/null | grep drawtext
+# ffmpeg-full drawtext support (captions)
+/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg -hide_banner -filters | grep drawtext
 
 # whisper-cli
 which whisper-cli
@@ -106,8 +110,8 @@ python3 -c "import cv2; print(f'OpenCV {cv2.__version__}')"
 # SciPy (for multi-angle sync)
 python3 -c "import scipy; print(f'SciPy {scipy.__version__}')"
 
-# Font
-ls ~/Library/Fonts/BigShouldersDisplay-Bold.ttf
+# Font (must print "Big Shoulders Display | Bold")
+fc-scan --format "%{family} | %{style}\n" ~/Library/Fonts/BigShouldersDisplay-700.ttf
 ```
 
 ## Usage

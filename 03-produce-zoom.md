@@ -144,16 +144,19 @@ for frame_idx in sample_points:
         x, y, w, h = faces[0]
         cx = int((x + w/2) / scale)
         cy = int((y + h/2) / scale)
-        face_centers.append((cx, cy))
+        face_centers.append((cx, cy, int(h / scale)))
 
 cap.release()
 
-# Average face position, or frame center as fallback
+# Average face position, or frame center as fallback.
+# face_h (median face box height) is used by portrait mode to keep the top of the head in frame.
 if face_centers:
     face_cx = int(sum(c[0] for c in face_centers) / len(face_centers))
     face_cy = int(sum(c[1] for c in face_centers) / len(face_centers))
+    face_h = int(sorted(c[2] for c in face_centers)[len(face_centers) // 2])
 else:
     face_cx, face_cy = width // 2, height // 2
+    face_h = height // 3
 ```
 
 **Outlier filtering**: If a detected face center is more than 30% of frame width/height away from the median, discard it as a false positive before averaging.
@@ -183,17 +186,17 @@ cy = max(0, min(face_cy - ch // 2, height - ch))
 Portrait crops a 9:16 region from the 16:9 source. Since the source is wider than tall, the crop is always narrower than the source width. The zoom levels control how much of the source **height** is used, which determines the framing:
 
 - **normal** (full frame): use 100% of source height -> no crop, establishes the scene
-- **emphasis** (head-to-chest): use ~85% of source height -> modest crop, noticeably tighter than normal
-- **critical** (head-and-shoulders): use ~70% of source height -> clear crop, the tightest framing in the ladder
+- **emphasis**: use 92% of source height -> a subtle push in
+- **critical**: use 85% of source height -> the tightest framing in the ladder, still a gentle push
 
-The whole ladder is deliberately softer than a traditional talking-head zoom. A 45% crop punches too far in on the face for this format; the middle tier here is the closest the edit ever gets.
+**These values are locked for portrait-from-landscape.** Going from 16:9 to 9:16 already removes most of the frame's width, so even "normal" is a moderate close-up — especially when the speaker sits close to the camera. Earlier ladders (0.85/0.70, and before that 0.45) read as uncomfortably tight face crops. Do not tighten these without the user asking.
 
 ```python
-# Portrait height fractions per label (how much source height to use)
+# Portrait height fractions per label (how much source height to use) — locked, see above
 portrait_height_frac = {
     "normal": 1.0,
-    "emphasis": 0.85,
-    "critical": 0.70,
+    "emphasis": 0.92,
+    "critical": 0.85,
 }
 
 frac = portrait_height_frac[section["label"]]
@@ -207,12 +210,18 @@ ch = ch - (ch % 2)
 # Horizontal: center on face
 cx = max(0, min(face_cx - cw // 2, width - cw))
 
-# Vertical: position face in the upper third of the crop.
-# Offset the crop so face_cy lands at ~30% from the top of the crop region.
-# This leaves head room above and torso/waist below.
+# Vertical: never crop off the top of the head.
+# head_top estimates the top of the hair/hat: the face box top is face_cy - face_h/2,
+# plus roughly one more face height above it for hair or a hat.
+# Prefer the face at ~30% from the top of the crop, but if that would cut the head,
+# shift the crop up so the head top stays in frame with a small margin.
+head_top = face_cy - 1.5 * face_h
 face_target_y = int(ch * 0.30)
-cy = max(0, min(face_cy - face_target_y, height - ch))
+cy = int(min(face_cy - face_target_y, head_top - ch * 0.03))
+cy = max(0, min(cy, height - ch))
 ```
+
+The zoom then reads as moving in toward the speaker, keeping the head and losing chest/shoulders at the bottom, instead of a face crop that loses the top of the head.
 
 The output scale target for portrait is always `1080:1920`.
 
@@ -324,7 +333,7 @@ Print:
 ### Important notes
 
 - **Landscape zoom**: a crop and scale operation — a 1.6x zoom crops to 1/1.6 of the frame centered on the face, then scales back up to the original resolution. Normal (1.0x) = full frame.
-- **Portrait zoom**: crops a 9:16 slice from the 16:9 source, with the face positioned in the upper third. Normal = head-to-waist, emphasis = head-and-shoulders, critical = tight face. The output is always 1080x1920.
+- **Portrait zoom**: crops a 9:16 slice from the 16:9 source using height fractions 1.0 / 0.92 / 0.85 (locked). The crop never cuts off the top of the head; zooms push in from the bottom. The output is always 1080x1920.
 - All sections must be continuous (no gaps) and cover the full video duration.
 - For landscape, the output maintains the original video resolution (e.g., 3840x2160). For portrait, output is always 1080x1920.
 - Face detection uses 10 sample frames spread across the video. This assumes a relatively stationary speaker (talking head format). For videos with significant movement, more sophisticated per-section face tracking would be needed.
