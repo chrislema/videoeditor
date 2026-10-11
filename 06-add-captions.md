@@ -13,9 +13,9 @@ Use this skill when the user wants to add burned-in captions/subtitles to a vide
 ## How to use
 
 ### Prerequisites
-- An `ffmpeg` with the `drawtext` filter. Standard Homebrew `ffmpeg` (8.1.x) does **not** include it — use `ffmpeg-full` at `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` (`brew install ffmpeg-full`). Check with `<ffmpeg> -hide_banner -filters | grep drawtext`.
-- `whisper-cli` must be installed with a model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
-- Big Shoulders Display Bold 700 static font at `~/Library/Fonts/BigShouldersDisplay-700.ttf`, referenced directly with `fontfile=`. Do NOT use `font='Big Shoulders Display'` — fontconfig resolves the family name to the variable font's thin default weight, and `:style=Bold` patterns fall back to a generic sans.
+- An `ffmpeg` with the `drawtext` filter. Homebrew `ffmpeg` 9+ and most Linux builds include it; older Homebrew `ffmpeg` (8.x) does **not** — fall back to `ffmpeg-full` (`brew install ffmpeg-full`). Check with `<ffmpeg> -hide_banner -filters | grep drawtext`.
+- `whisper-cli` (Homebrew formula `whisper-cpp`) with the `ggml-medium.bin` model
+- A static Big Shoulders Display Bold (700) font, referenced directly with `fontfile=`. The newer merged "Big Shoulders" family's static Bold also works. Do NOT use `font='Big Shoulders Display'` — fontconfig resolves the family name to the variable font's thin default weight, and `:style=Bold` patterns fall back to a generic sans.
 
 ### Parameters
 The user may optionally specify:
@@ -27,6 +27,76 @@ The user may optionally specify:
 - **box_opacity**: Opacity of the black background box, 0.0-1.0 (default: 0.70, meaning 30% transparent)
 
 ### Process
+
+#### Step 0: Locate tools
+
+If `/process-video` passed `FFMPEG_DRAWTEXT`, `WHISPER_BIN`, `WHISPER_MODEL`, and `CAPTION_FONT`, use those. Otherwise resolve them — never hard-code install paths. These functions are copied from `/process-video`'s "Locating tools" section; keep them in sync. Each checks an environment variable override (`$FFMPEG_DRAWTEXT`, `$WHISPER_BIN`, `$WHISPER_MODEL`, `$CAPTION_FONT`) first.
+
+```python
+import os, shutil, subprocess
+
+def brew_prefixes():
+    # Apple Silicon, Intel Mac, and Linuxbrew defaults, with the active prefix first
+    prefixes = ["/opt/homebrew", "/usr/local", "/home/linuxbrew/.linuxbrew"]
+    if shutil.which("brew"):
+        active = subprocess.run(["brew", "--prefix"], capture_output=True, text=True).stdout.strip()
+        if active:
+            prefixes = [active] + [p for p in prefixes if p != active]
+    return prefixes
+
+def has_drawtext(ffmpeg):
+    out = subprocess.run([ffmpeg, "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+    return "drawtext" in out
+
+def find_ffmpeg_drawtext():
+    # $FFMPEG_DRAWTEXT, then ffmpeg on PATH (ffmpeg 9+ and most Linux builds include drawtext),
+    # then Homebrew's keg-only ffmpeg-full
+    candidates = [os.environ.get("FFMPEG_DRAWTEXT"), shutil.which("ffmpeg")]
+    candidates += [f"{p}/opt/ffmpeg-full/bin/ffmpeg" for p in brew_prefixes()]
+    return next((c for c in candidates if c and os.path.isfile(c) and has_drawtext(c)), None)
+
+def find_whisper_bin():
+    names = [os.environ.get("WHISPER_BIN"), "whisper-cli", "whisper-cpp", "main"]
+    return next((shutil.which(n) for n in names if n and shutil.which(n)), None)
+
+def find_whisper_model(name="ggml-medium.bin"):
+    # $WHISPER_MODEL, then the user cache, then Homebrew share dirs (formula was renamed whisper-cpp -> whisper.cpp)
+    candidates = [os.environ.get("WHISPER_MODEL"),
+                  os.path.expanduser(f"~/.cache/whisper-cpp/{name}"),
+                  os.path.expanduser(f"~/whisper.cpp/models/{name}")]
+    for p in brew_prefixes():
+        candidates += [f"{p}/share/whisper-cpp/models/{name}", f"{p}/share/whisper.cpp/models/{name}"]
+    return next((c for c in candidates if c and os.path.isfile(c)), None)
+
+def find_caption_font():
+    # $CAPTION_FONT, else ask fontconfig for a static Bold of "Big Shoulders Display"
+    # (preferred) or the newer merged "Big Shoulders" family. Variable fonts are skipped —
+    # drawtext renders their thin default weight.
+    env = os.environ.get("CAPTION_FONT")
+    if env:
+        env = os.path.expanduser(env)
+        return env if os.path.isfile(env) else None
+    if not shutil.which("fc-list"):
+        return None
+    out = subprocess.run(["fc-list", "--format", "%{file}|%{family}|%{style}|%{variable}\n"],
+                         capture_output=True, text=True).stdout
+    matches = {}
+    for line in out.splitlines():
+        parts = line.split("|")
+        if len(parts) != 4 or parts[3] == "True" or "Bold" not in parts[2].split(","):
+            continue
+        for rank, family in enumerate(["Big Shoulders Display", "Big Shoulders"]):
+            if family in parts[1].split(","):
+                matches.setdefault(rank, parts[0])
+    return matches[min(matches)] if matches else None
+```
+
+FFMPEG_DRAWTEXT = find_ffmpeg_drawtext()
+WHISPER_BIN = find_whisper_bin()
+WHISPER_MODEL = find_whisper_model()
+CAPTION_FONT = find_caption_font()
+# If any is None, stop and report which one is missing (see Prerequisites)
+```
 
 #### Step 1: Get video dimensions
 
@@ -44,7 +114,7 @@ Use whisper's `-ml` (max segment length) flag to get short, accurately-timed seg
 ```bash
 ffmpeg -y -i <input> -ar 16000 -ac 1 -f wav /tmp/caption_whisper_$$.wav
 # -ml 35 for landscape (~6 words), -ml 20 for portrait (~3 words)
-whisper-cli -m /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin -ml <max_chars> -f /tmp/caption_whisper_$$.wav
+<WHISPER_BIN> -m <WHISPER_MODEL> -ml <max_chars> -f /tmp/caption_whisper_$$.wav
 rm -f /tmp/caption_whisper_$$.wav
 ```
 
@@ -123,7 +193,7 @@ for start, end, text in caption_events:
         escaped = escape_drawtext(line)
         line_y = start_y + li * line_height
         dt = (
-            f"drawtext=fontfile={FONT_PATH}"
+            f"drawtext=fontfile={CAPTION_FONT}"
             f":text='{escaped}'"
             f":fontcolor=white"
             f":fontsize={font_size}"
@@ -166,7 +236,7 @@ ffmpeg -y -i <input> \
   <output>
 ```
 
-**Important**: Render with the drawtext-capable binary (`FFMPEG = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"`), and set `FONT_PATH = os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-700.ttf")`. Use `fontfile={FONT_PATH}`, NOT `font='Big Shoulders Display'` (name lookup picks the thin variable-font weight).
+**Important**: Render with the drawtext-capable binary from Step 0 (`<FFMPEG_DRAWTEXT>` in place of `ffmpeg` above), and use `fontfile={CAPTION_FONT}`, NOT `font='Big Shoulders Display'` (name lookup picks the thin variable-font weight).
 
 ### Caption style
 
@@ -194,9 +264,9 @@ ffmpeg -y -i <input> \
 - Adjust `y_position` — `height * 0.80` puts it in the lower fifth. Use `height * 0.85` for lower, `height * 0.70` for higher.
 
 ### Important notes
-- This skill requires an `ffmpeg` with drawtext — standard Homebrew `ffmpeg` lacks it; use `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg`
+- This skill requires an `ffmpeg` with drawtext — resolved in Step 0 (`ffmpeg` on PATH if it has drawtext, else Homebrew's `ffmpeg-full`)
 - The font is referenced by file (`fontfile=`), not by name — name lookup through fontconfig resolves to the wrong weight
-- The font file must be a real TTF at `~/Library/Fonts/BigShouldersDisplay-700.ttf` (verify with `fc-scan` — a bad download can save an HTML page with a .ttf name)
+- The font file must be a real static TTF (verify with `fc-scan` — a bad download can save an HTML page with a .ttf name). Variable fonts render a thin weight, so Step 0 skips them
 - The black box automatically sizes to fit the text — it is not a fixed-width bar
 - **Never use newline characters (`\n`) in drawtext text.** Big Shoulders Display renders `\n` as a visible tofu glyph (X-in-a-box). For multi-line captions, use separate stacked drawtext filters — one per line, each with the same `enable` time range but offset `y` positions.
 - This skill should run after all other video processing (silence removal, zoom, color, audio mastering)

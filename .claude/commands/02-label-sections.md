@@ -13,8 +13,8 @@ Use this skill when the user wants to break a video transcript into labeled zoom
 ## How to use
 
 ### Prerequisites
-- `ffmpeg` and `whisper-cli` must be installed
-- A whisper model must be available at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
+- `ffmpeg` and `whisper-cli` (Homebrew formula `whisper-cpp`) must be installed
+- The whisper `ggml-medium.bin` model must be available (see "Locating tools" below)
 - Input must be a video file (mp4, mov, mkv, webm, etc.)
 
 ### Parameters
@@ -27,13 +27,48 @@ The user may optionally specify:
 
 ### Process
 
+#### Step 0: Locate whisper
+
+If `/process-video` passed `WHISPER_BIN` and `WHISPER_MODEL`, use those. Otherwise resolve them — never hard-code install paths. These functions are copied from `/process-video`'s "Locating tools" section; keep them in sync. Each checks an environment variable override (`$WHISPER_BIN`, `$WHISPER_MODEL`) first.
+
+```python
+import os, shutil, subprocess
+
+def brew_prefixes():
+    # Apple Silicon, Intel Mac, and Linuxbrew defaults, with the active prefix first
+    prefixes = ["/opt/homebrew", "/usr/local", "/home/linuxbrew/.linuxbrew"]
+    if shutil.which("brew"):
+        active = subprocess.run(["brew", "--prefix"], capture_output=True, text=True).stdout.strip()
+        if active:
+            prefixes = [active] + [p for p in prefixes if p != active]
+    return prefixes
+
+def find_whisper_bin():
+    names = [os.environ.get("WHISPER_BIN"), "whisper-cli", "whisper-cpp", "main"]
+    return next((shutil.which(n) for n in names if n and shutil.which(n)), None)
+
+def find_whisper_model(name="ggml-medium.bin"):
+    # $WHISPER_MODEL, then the user cache, then Homebrew share dirs (formula was renamed whisper-cpp -> whisper.cpp)
+    candidates = [os.environ.get("WHISPER_MODEL"),
+                  os.path.expanduser(f"~/.cache/whisper-cpp/{name}"),
+                  os.path.expanduser(f"~/whisper.cpp/models/{name}")]
+    for p in brew_prefixes():
+        candidates += [f"{p}/share/whisper-cpp/models/{name}", f"{p}/share/whisper.cpp/models/{name}"]
+    return next((c for c in candidates if c and os.path.isfile(c)), None)
+
+WHISPER_BIN = find_whisper_bin()
+WHISPER_MODEL = find_whisper_model()
+# If either is None, stop and report it (install: brew install whisper-cpp; model: download
+# https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin to ~/.cache/whisper-cpp/)
+```
+
 #### Step 1: Transcribe the video
 
-Extract audio and run whisper-cli to get timestamped transcript:
+Extract audio and run whisper to get timestamped transcript:
 
 ```bash
 ffmpeg -i <input> -ar 16000 -ac 1 -f wav /tmp/zoom_whisper_$$.wav -y
-whisper-cli -m /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin -f /tmp/zoom_whisper_$$.wav
+<WHISPER_BIN> -m <WHISPER_MODEL> -f /tmp/zoom_whisper_$$.wav
 rm -f /tmp/zoom_whisper_$$.wav
 ```
 

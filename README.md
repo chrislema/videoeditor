@@ -29,92 +29,86 @@ Given a raw video file, `/process-video <filename> [-HD|-4K|-portrait] [-nocapti
 
 ## Prerequisites
 
+The skills never hard-code install paths. A "Locating tools" step (in `/process-video`, `/label-sections`, and `/add-captions`) finds each tool in the usual places on Apple Silicon, Intel Macs, and Linux, and every lookup can be overridden with an environment variable:
+
+| Tool | Override | Where it looks |
+|---|---|---|
+| ffmpeg with `drawtext` (captions) | `FFMPEG_DRAWTEXT` | `ffmpeg` on PATH, then Homebrew `ffmpeg-full` under any brew prefix |
+| whisper binary | `WHISPER_BIN` | `whisper-cli`, `whisper-cpp`, `main` on PATH |
+| whisper model `ggml-medium.bin` | `WHISPER_MODEL` | `~/.cache/whisper-cpp/`, `~/whisper.cpp/models/`, Homebrew `share/whisper-cpp/models/` and `share/whisper.cpp/models/` |
+| Caption font | `CAPTION_FONT` | fontconfig (`fc-list`) — any installed static Bold of "Big Shoulders Display" or the merged "Big Shoulders" family |
+
+Brew prefixes searched: the active `brew --prefix`, then `/opt/homebrew`, `/usr/local`, `/home/linuxbrew/.linuxbrew`.
+
 ### Homebrew packages
 
 ```bash
-# Standard ffmpeg (used for steps 1–5)
+# ffmpeg 9+ includes the drawtext filter used for captions
 brew install ffmpeg
 
-# ffmpeg-full for captions (step 6) — standard ffmpeg lacks the drawtext filter
-brew install ffmpeg-full   # used via /opt/homebrew/opt/ffmpeg-full/bin/ffmpeg
+# Only if your ffmpeg lacks drawtext (ffmpeg 8.x and earlier on Homebrew)
+brew install ffmpeg-full
 
 # whisper.cpp CLI for transcription (steps 2 and 6)
 brew install whisper-cpp
 ```
 
-After installing whisper-cpp, verify the medium model is available:
+### Whisper model
+
+The Homebrew whisper formula no longer ships a models directory, so download the medium model to the user cache:
 
 ```bash
-ls /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin
+mkdir -p ~/.cache/whisper-cpp
+curl -L -o ~/.cache/whisper-cpp/ggml-medium.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin
 ```
 
-If the model isn't there, download it:
-
-```bash
-# whisper-cpp includes a download script
-cd /opt/homebrew/share/whisper-cpp/models
-bash download-ggml-model.sh medium
-```
+Or set `WHISPER_MODEL` to a model file you already have.
 
 ### Python packages
 
 ```bash
-pip3 install opencv-python-headless scipy numpy
+pip3 install "opencv-python-headless<5" scipy numpy
 ```
 
-OpenCV is used for face detection in step 3 (produce-zoom). The `headless` variant is sufficient — no GUI needed. SciPy and NumPy are used for audio cross-correlation in multi-angle sync.
+OpenCV is used for face detection in step 3 (produce-zoom). The `headless` variant is sufficient — no GUI needed. Pin it below 5: OpenCV 5 removed the Haar cascade face detector this step uses. SciPy and NumPy are used for audio cross-correlation in multi-angle sync.
 
 ### Font
 
-The caption step uses **Big Shoulders Display Bold 700** from Google Fonts. Download the static TTF and place it in your user fonts directory:
+The caption step uses **Big Shoulders Display Bold 700**. Install a **static** Bold TTF anywhere fontconfig can see it (`~/Library/Fonts`, `/Library/Fonts`, `~/.local/share/fonts`, …). Sources:
 
-```bash
-# Download from Google Fonts
-curl -L -o /tmp/BigShouldersDisplay.zip \
-  "https://fonts.google.com/download?family=Big+Shoulders+Display"
+- Google Fonts: https://fonts.google.com/specimen/Big+Shoulders+Display (the newer merged "Big Shoulders" family's static Bold also works)
+- Upstream static files: https://github.com/xotypeco/big_shoulders (`Big-Shoulders/fonts/ttf/BigShouldersDisplay-Bold.ttf`)
 
-# Extract and install the 700 weight
-unzip /tmp/BigShouldersDisplay.zip -d /tmp/BigShouldersDisplay
-cp /tmp/BigShouldersDisplay/static/BigShouldersDisplay-Bold.ttf \
-  ~/Library/Fonts/BigShouldersDisplay-700.ttf
+Avoid the variable font (`BigShouldersDisplay[wght].ttf`) — drawtext renders its thin default weight. The locator skips variable fonts automatically. To use a specific file, set `CAPTION_FONT=/path/to/font.ttf`.
 
-# Confirm it's a real font (a failed download can save an HTML page as .ttf)
-fc-scan --format "%{family} | %{style}\n" ~/Library/Fonts/BigShouldersDisplay-700.ttf
-```
-
-The pipeline expects the font at:
-```
-~/Library/Fonts/BigShouldersDisplay-700.ttf
-```
-
-**Important**: Reference the font by file with `fontfile=~/Library/Fonts/BigShouldersDisplay-700.ttf` (expanded to an absolute path). Do NOT use `font='Big Shoulders Display'` — fontconfig resolves the family name to the variable font's thin default weight, and `:style=Bold` patterns fall back to a generic sans.
+**Important**: Captions reference the font by file (`fontfile=`). Do NOT use `font='Big Shoulders Display'` — fontconfig resolves the family name to the variable font's thin default weight, and `:style=Bold` patterns fall back to a generic sans.
 
 ### Verify everything
 
 Quick check that all prerequisites are in place:
 
 ```bash
-# ffmpeg (standard)
-which ffmpeg && ffmpeg -version | head -1
-
-# ffmpeg-full drawtext support (captions)
-/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg -hide_banner -filters | grep drawtext
+# ffmpeg with drawtext (if this prints nothing, install ffmpeg-full)
+ffmpeg -hide_banner -filters | grep drawtext
 
 # whisper-cli
 which whisper-cli
 
 # whisper model
-ls /opt/homebrew/share/whisper-cpp/models/ggml-medium.bin
+ls ~/.cache/whisper-cpp/ggml-medium.bin
 
-# OpenCV
-python3 -c "import cv2; print(f'OpenCV {cv2.__version__}')"
+# OpenCV 4.x with Haar cascades (must print True)
+python3 -c "import cv2, os; print(cv2.__version__, os.path.exists(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'))"
 
 # SciPy (for multi-angle sync)
 python3 -c "import scipy; print(f'SciPy {scipy.__version__}')"
 
-# Font (must print "Big Shoulders Display | Bold")
-fc-scan --format "%{family} | %{style}\n" ~/Library/Fonts/BigShouldersDisplay-700.ttf
+# Font (must list at least one static Bold)
+fc-list --format '%{file} | %{family} | %{style} | variable=%{variable}\n' | grep -i 'big shoulders' | grep Bold
 ```
+
+`/process-video` runs the same checks in its pre-flight and prints the resolved paths before starting.
 
 ## Usage
 
@@ -206,6 +200,4 @@ After cleanup, only the original, all secondary camera originals, and `_final.mp
 ## Platform notes
 
 - Built and tested on **macOS** (Apple Silicon / Homebrew)
-- ffmpeg paths assume Homebrew on ARM Macs (`/opt/homebrew/...`). Intel Macs use `/usr/local/...` — update paths accordingly
-- The font path is macOS-specific (`~/Library/Fonts/`). On Linux, adjust to `~/.local/share/fonts/` or `/usr/share/fonts/`
-- `whisper-cli` binary name may vary by installation method — some installs use `whisper-cpp` or `main` instead
+- Install paths are discovered at run time (see Prerequisites), so Intel Macs (`/usr/local`) and Linux work without editing the skills. Use the `FFMPEG_DRAWTEXT`, `WHISPER_BIN`, `WHISPER_MODEL`, and `CAPTION_FONT` environment variables for anything installed somewhere unusual

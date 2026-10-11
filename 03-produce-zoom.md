@@ -14,7 +14,7 @@ Use this skill when the user has a sections JSON file (from `/label-zoom-section
 
 ### Prerequisites
 - `ffmpeg` must be installed
-- `opencv-python-headless` must be installed (`pip3 install opencv-python-headless`)
+- `opencv-python-headless` 4.x must be installed (`pip3 install "opencv-python-headless<5"`) — OpenCV 5 removed the Haar cascade files this step uses
 - A sections JSON file (produced by `/label-zoom-sections`)
 - The trimmed video file referenced in the JSON
 

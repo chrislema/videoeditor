@@ -43,45 +43,121 @@ Examples:
 - `/process-video testvideo.mp4 angle2.mp4 angle3.mp4 -HD` -> 3-camera multi-angle HD output
 
 ### Prerequisites
-- `ffmpeg` (standard) for steps 1-5
-- `ffmpeg-full` at `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` for captions (standard Homebrew `ffmpeg` lacks the `drawtext` filter)
-- `whisper-cli` with model at `/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin`
-- `opencv-python-headless` (pip)
-- Big Shoulders Display Bold 700 static font at `~/Library/Fonts/BigShouldersDisplay-700.ttf`, referenced with `fontfile=` — not needed if `-nocaptions` is used
+- `ffmpeg` and `ffprobe` on PATH for steps 1-5
+- An `ffmpeg` with the `drawtext` filter for captions. Homebrew `ffmpeg` 9+ and most Linux builds include it; older Homebrew `ffmpeg` does not, so fall back to `ffmpeg-full` (`brew install ffmpeg-full`)
+- `whisper-cli` (Homebrew formula `whisper-cpp`) and the `ggml-medium.bin` model
+- `opencv-python-headless<5` (pip) — OpenCV 5 dropped the Haar cascade face detector used in step 3
+- A static Big Shoulders Display Bold (700) font, referenced with `fontfile=` — not needed if `-nocaptions` is used
 - `scipy` and `numpy` (pip) — only required when secondary angles are provided (for audio cross-correlation sync)
+
+### Locating tools
+
+Never hard-code install paths — they differ between Apple Silicon, Intel Macs, and Linux. Resolve them with these functions, which check an environment variable override first, then the common install locations. Use the resolved values everywhere a step below says `<FFMPEG_DRAWTEXT>`, `<WHISPER_BIN>`, `<WHISPER_MODEL>`, or `<CAPTION_FONT>`, and pass them along when invoking `/label-sections` and `/add-captions`.
+
+| Value | Override | Search order |
+|---|---|---|
+| `FFMPEG_DRAWTEXT` | `$FFMPEG_DRAWTEXT` | `ffmpeg` on PATH, then `<brew prefix>/opt/ffmpeg-full/bin/ffmpeg` — first one with drawtext |
+| `WHISPER_BIN` | `$WHISPER_BIN` | `whisper-cli`, `whisper-cpp`, `main` on PATH |
+| `WHISPER_MODEL` | `$WHISPER_MODEL` | `~/.cache/whisper-cpp/`, `~/whisper.cpp/models/`, `<brew prefix>/share/whisper-cpp/models/`, `<brew prefix>/share/whisper.cpp/models/` |
+| `CAPTION_FONT` | `$CAPTION_FONT` | fontconfig (`fc-list`): a static Bold of "Big Shoulders Display", else of the newer merged "Big Shoulders" family |
+
+Brew prefixes searched: the active `brew --prefix`, then `/opt/homebrew`, `/usr/local`, `/home/linuxbrew/.linuxbrew`.
+
+```python
+import os, shutil, subprocess
+
+def brew_prefixes():
+    # Apple Silicon, Intel Mac, and Linuxbrew defaults, with the active prefix first
+    prefixes = ["/opt/homebrew", "/usr/local", "/home/linuxbrew/.linuxbrew"]
+    if shutil.which("brew"):
+        active = subprocess.run(["brew", "--prefix"], capture_output=True, text=True).stdout.strip()
+        if active:
+            prefixes = [active] + [p for p in prefixes if p != active]
+    return prefixes
+
+def has_drawtext(ffmpeg):
+    out = subprocess.run([ffmpeg, "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+    return "drawtext" in out
+
+def find_ffmpeg_drawtext():
+    # $FFMPEG_DRAWTEXT, then ffmpeg on PATH (ffmpeg 9+ and most Linux builds include drawtext),
+    # then Homebrew's keg-only ffmpeg-full
+    candidates = [os.environ.get("FFMPEG_DRAWTEXT"), shutil.which("ffmpeg")]
+    candidates += [f"{p}/opt/ffmpeg-full/bin/ffmpeg" for p in brew_prefixes()]
+    return next((c for c in candidates if c and os.path.isfile(c) and has_drawtext(c)), None)
+
+def find_whisper_bin():
+    names = [os.environ.get("WHISPER_BIN"), "whisper-cli", "whisper-cpp", "main"]
+    return next((shutil.which(n) for n in names if n and shutil.which(n)), None)
+
+def find_whisper_model(name="ggml-medium.bin"):
+    # $WHISPER_MODEL, then the user cache, then Homebrew share dirs (formula was renamed whisper-cpp -> whisper.cpp)
+    candidates = [os.environ.get("WHISPER_MODEL"),
+                  os.path.expanduser(f"~/.cache/whisper-cpp/{name}"),
+                  os.path.expanduser(f"~/whisper.cpp/models/{name}")]
+    for p in brew_prefixes():
+        candidates += [f"{p}/share/whisper-cpp/models/{name}", f"{p}/share/whisper.cpp/models/{name}"]
+    return next((c for c in candidates if c and os.path.isfile(c)), None)
+
+def find_caption_font():
+    # $CAPTION_FONT, else ask fontconfig for a static Bold of "Big Shoulders Display"
+    # (preferred) or the newer merged "Big Shoulders" family. Variable fonts are skipped —
+    # drawtext renders their thin default weight.
+    env = os.environ.get("CAPTION_FONT")
+    if env:
+        env = os.path.expanduser(env)
+        return env if os.path.isfile(env) else None
+    if not shutil.which("fc-list"):
+        return None
+    out = subprocess.run(["fc-list", "--format", "%{file}|%{family}|%{style}|%{variable}\n"],
+                         capture_output=True, text=True).stdout
+    matches = {}
+    for line in out.splitlines():
+        parts = line.split("|")
+        if len(parts) != 4 or parts[3] == "True" or "Bold" not in parts[2].split(","):
+            continue
+        for rank, family in enumerate(["Big Shoulders Display", "Big Shoulders"]):
+            if family in parts[1].split(","):
+                matches.setdefault(rank, parts[0])
+    return matches[min(matches)] if matches else None
+```
+
+The same functions appear in `/label-sections` and `/add-captions` so those skills work standalone — keep all three copies in sync.
 
 ### Pre-flight check
 
 Before running any pipeline step, validate that all required tools and files are present. **Stop immediately and report what's missing** if any check fails.
 
 ```python
-import subprocess, os, sys
+import sys
 
 errors = []
 
-# 1. ffmpeg (standard)
-if subprocess.run(["which", "ffmpeg"], capture_output=True).returncode != 0:
-    errors.append("ffmpeg not found. Install with: brew install ffmpeg")
+# 1. ffmpeg / ffprobe
+for tool in ["ffmpeg", "ffprobe"]:
+    if not shutil.which(tool):
+        errors.append(f"{tool} not found. Install with: brew install ffmpeg (macOS) or your package manager")
 
-# 2. whisper-cli (try common binary names)
-whisper_bin = None
-for name in ["whisper-cli", "whisper-cpp", "main"]:
-    if subprocess.run(["which", name], capture_output=True).returncode == 0:
-        whisper_bin = name
-        break
-if not whisper_bin:
-    errors.append("whisper-cli not found. Install with: brew install whisper-cpp")
+# 2. whisper-cli
+WHISPER_BIN = find_whisper_bin()
+if not WHISPER_BIN:
+    errors.append("whisper-cli not found. Install with: brew install whisper-cpp (or build whisper.cpp and set $WHISPER_BIN)")
 
 # 3. Whisper model
-model_path = "/opt/homebrew/share/whisper-cpp/models/ggml-medium.bin"
-if not os.path.exists(model_path):
-    errors.append(f"Whisper model not found at {model_path}. Run: cd /opt/homebrew/share/whisper-cpp/models && bash download-ggml-model.sh medium")
+WHISPER_MODEL = find_whisper_model()
+if not WHISPER_MODEL:
+    errors.append("Whisper model ggml-medium.bin not found. Download it with: "
+                  "mkdir -p ~/.cache/whisper-cpp && curl -L -o ~/.cache/whisper-cpp/ggml-medium.bin "
+                  "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin "
+                  "(or set $WHISPER_MODEL to an existing model file)")
 
-# 4. OpenCV
+# 4. OpenCV with the Haar cascade face detector
 try:
-    subprocess.run([sys.executable, "-c", "import cv2"], capture_output=True, check=True)
+    subprocess.run([sys.executable, "-c",
+        "import cv2, os; assert os.path.exists(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')"],
+        capture_output=True, check=True)
 except subprocess.CalledProcessError:
-    errors.append("opencv-python-headless not found. Install with: pip3 install opencv-python-headless")
+    errors.append("OpenCV 4.x with Haar cascades not found. Install with: pip3 install 'opencv-python-headless<5'")
 
 # 5. SciPy (only when secondaries are provided)
 if secondaries:
@@ -92,26 +168,29 @@ if secondaries:
 
 # 6. Captions prerequisites (only if captions are enabled)
 if not nocaptions:
-    # drawtext-capable ffmpeg (standard Homebrew ffmpeg lacks drawtext)
-    ffmpeg_full = "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg"
-    ok = os.path.exists(ffmpeg_full) and "drawtext" in subprocess.run([ffmpeg_full, "-hide_banner", "-filters"], capture_output=True, text=True).stdout
-    if not ok:
-        errors.append("ffmpeg-full with drawtext not found. Install with: brew install ffmpeg-full")
+    FFMPEG_DRAWTEXT = find_ffmpeg_drawtext()
+    if not FFMPEG_DRAWTEXT:
+        errors.append("No ffmpeg with the drawtext filter found. Install with: brew install ffmpeg-full "
+                      "(or set $FFMPEG_DRAWTEXT to a drawtext-capable ffmpeg)")
 
-    # Font file (referenced directly with fontfile=)
-    font_path = os.path.expanduser("~/Library/Fonts/BigShouldersDisplay-700.ttf")
-    if not os.path.exists(font_path):
-        errors.append(f"Caption font not found at {font_path}. Download from Google Fonts: https://fonts.google.com/specimen/Big+Shoulders+Display")
-
+    CAPTION_FONT = find_caption_font()
+    if not CAPTION_FONT:
+        errors.append("Static Big Shoulders Display Bold font not found. Install the Bold TTF from "
+                      "https://fonts.google.com/specimen/Big+Shoulders+Display or "
+                      "https://github.com/xotypeco/big_shoulders (or set $CAPTION_FONT to the .ttf path)")
     # Verify it is a real font file (a bad download can save an HTML page as .ttf)
-    elif "Big Shoulders" not in subprocess.run(["fc-scan", "--format", "%{family}", font_path], capture_output=True, text=True).stdout:
-        errors.append(f"{font_path} is not a valid font file. Re-download the static Bold (700) TTF from Google Fonts.")
+    elif "Big Shoulders" not in subprocess.run(["fc-scan", "--format", "%{family}", CAPTION_FONT], capture_output=True, text=True).stdout:
+        errors.append(f"{CAPTION_FONT} is not a valid Big Shoulders font file.")
 
 if errors:
     print("Pre-flight check failed:")
     for e in errors:
         print(f"  - {e}")
     # STOP — do not proceed with the pipeline
+else:
+    print(f"WHISPER_BIN={WHISPER_BIN}\nWHISPER_MODEL={WHISPER_MODEL}")
+    if not nocaptions:
+        print(f"FFMPEG_DRAWTEXT={FFMPEG_DRAWTEXT}\nCAPTION_FONT={CAPTION_FONT}")
 ```
 
 ### Pipeline
@@ -144,7 +223,7 @@ Only run this step when secondary video files are provided.
 #### Step 2: Label Sections (`/label-sections`)
 - **Input**: `<name>_trimmed.mp4`
 - **Output**: `<name>_trimmed_sections.json`
-- Transcribe with whisper-cli
+- Transcribe with `<WHISPER_BIN> -m <WHISPER_MODEL>`
 - Break into sections: min 3s, max 6s per section
 - Label each section as normal (1.0x), emphasis (1.25x), or critical (1.6x) based on content analysis
 - ~60% normal, ~30% emphasis, ~10% critical (by duration — critical only for the one or two real punchlines)
@@ -193,14 +272,14 @@ If captions are enabled (the default):
 - **Input**: `<name>_mastered.mp4`
 - **Output**: `<name>_final.mp4`
 - **Resolution**: Pass the resolution flag (`-HD`, `-4K`, or `-portrait`) to this step. Default is `-HD` (1920x1080).
-- Transcribe with whisper-cli
+- Transcribe with `<WHISPER_BIN> -m <WHISPER_MODEL>`
 - For landscape: break into max 6 words per caption, ALL CAPS
 - For `-portrait`: break into max 3 words per caption (narrower frame), ALL CAPS
-- Big Shoulders Display Bold 700 via `fontfile=~/Library/Fonts/BigShouldersDisplay-700.ttf` (NOT `font='Big Shoulders Display'`, which renders a thin weight), white text on black box (70% opacity)
+- Big Shoulders Display Bold 700 via `fontfile=<CAPTION_FONT>` (NOT `font='Big Shoulders Display'`, which renders a thin weight), white text on black box (70% opacity)
 - Font size calculated from **target** dimensions (not source): `target_width * 0.0495`, centered at `target_height * 0.80`
 - For `-portrait`: target is 1080x1920, font size from `target_width * 0.065` (larger relative to narrow frame), centered at `target_height * 0.75` (higher to avoid thumb zone)
 - If downscaling, prepend appropriate `scale=` filter to the filter chain before drawtext filters
-- Uses `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` (standard `ffmpeg` lacks drawtext)
+- Renders with `<FFMPEG_DRAWTEXT>` (the drawtext-capable ffmpeg found in pre-flight)
 - Output as `_final.mp4` (always mp4 regardless of input format)
 
 #### Step 6.5: Save Transcript
