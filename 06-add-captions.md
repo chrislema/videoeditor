@@ -129,7 +129,7 @@ Parse the `[HH:MM:SS.mmm --> HH:MM:SS.mmm] text` lines from output.
 - Each segment's start/end time comes directly from whisper — trust these timestamps
 - Clean the text before rendering (see `clean_events` below):
   - **Rejoin split contractions.** Whisper's `-ml` can break a contraction across segments ("YOU" | "'VE STARTED NOTICING"). Glue the tail back onto the previous caption's last word; leave both timestamps alone.
-  - **Fix mis-heard names** with the same corrections the transcript step uses (e.g. "chat GBT" → "ChatGPT"). Add to `NAME_FIXES` whenever a new one shows up.
+  - **Fix mis-heard names** with the same corrections the transcript step uses (e.g. "chat GBT" → "ChatGPT"), including names whisper split across two segments ("…FROM CHAT" | "GPT." → "…FROM CHATGPT."). Add to `NAME_FIXES` whenever a new one shows up.
   - **Drop leading punctuation.** Whisper sometimes starts a segment with the previous clause's comma (", TONS OF RESEARCH").
 - Convert all text to UPPERCASE after cleaning
 
@@ -139,6 +139,7 @@ import math, re
 # Mis-heard names: keep in step with the transcript cleanup in /process-video Step 6.5
 NAME_FIXES = [
     (r"\bchat\s*g[bp]t\b", "ChatGPT"),
+    (r"\bdigital\s*advisors\s*\.\s*ai\b", "digitaladvisors.ai"),
     (r"\bdigital\s+advisors\b", "Digital Advisors"),
 ]
 CONTRACTION_TAIL = re.compile(r"^(n?'(?:s|t|m|re|ve|ll|d))\b\s*", re.I)
@@ -154,6 +155,22 @@ def clean_events(raw_events):
             text = text[m.end():]
             # If the segment was only the contraction tail, the previous caption absorbs its time too
             events[-1] = (prev_start, prev_end if text else end, prev_text + m.group(1))
+        # A name can also be split across segments ("getting from chat" | "GPT."):
+        # move the whole name into the earlier caption
+        if events and text:
+            prev_start, prev_end, prev_text = events[-1]
+            joined = prev_text + " " + text
+            for pattern, fix in NAME_FIXES:
+                nm = re.search(pattern, joined, flags=re.I)
+                if nm and nm.start() < len(prev_text) < nm.end():
+                    rest = joined[nm.end():]
+                    if rest.strip(",.;:!? "):
+                        events[-1] = (prev_start, prev_end, joined[:nm.start()] + fix)
+                        text = rest
+                    else:  # only punctuation left: the earlier caption takes it and the time
+                        events[-1] = (prev_start, end, joined[:nm.start()] + fix + rest.strip())
+                        text = ""
+                    break
         text = text.lstrip(",.;:!? ")
         for pattern, fix in NAME_FIXES:
             text = re.sub(pattern, fix, text, flags=re.I)
