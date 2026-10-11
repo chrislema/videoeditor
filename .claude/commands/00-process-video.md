@@ -242,7 +242,7 @@ Only run this step when secondary video files were provided.
 - **Multi-angle additional inputs**: `<name>_sync_manifest.json` + `<name>_segment_map.json`
 - **Output**: `<name>_zoomed.mp4`
 - **Resolution**: Pass the resolution flag (`-HD`, `-4K`, or `-portrait`) to this step.
-- Detect face position using OpenCV (10 sample frames, averaged)
+- Detect face position per section using OpenCV (samples every 0.5s, size-filtered, median per section)
 - For landscape: crop to zoom level centered on face, scale back to original resolution
 - For `-portrait`: crop a 9:16 region from the 16:9 source centered on face. Normal = full frame (100% height), emphasis = 92% height, critical = 85% height (locked — tighter reads as an uncomfortable face crop). The crop never cuts off the top of the head; it keeps the head in frame and loses chest/shoulders as it zooms.
 - For multi-angle: read the sync manifest and segment map to compute secondary file timestamps. Secondary sections use original (untrimmed) secondary files with mapped timestamps.
@@ -275,6 +275,7 @@ If captions are enabled (the default):
 - Transcribe with `<WHISPER_BIN> -m <WHISPER_MODEL>`
 - For landscape: break into max 6 words per caption, ALL CAPS
 - For `-portrait`: break into max 3 words per caption (narrower frame), ALL CAPS
+- Rejoin contractions whisper split across segments, fix mis-heard names (same list as the transcript), keep apostrophes as ’, and stack captions over 4 words into balanced lines
 - Big Shoulders Display Bold 700 via `fontfile=<CAPTION_FONT>` (NOT `font='Big Shoulders Display'`, which renders a thin weight), white text on black box (70% opacity)
 - Font size calculated from **target** dimensions (not source): `target_width * 0.0495`, centered at `target_height * 0.80`
 - For `-portrait`: target is 1080x1920, font size from `target_width * 0.065` (larger relative to narrow frame), centered at `target_height * 0.75` (higher to avoid thumb zone)

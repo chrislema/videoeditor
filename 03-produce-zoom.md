@@ -111,55 +111,102 @@ def trimmed_to_secondary(trimmed_time, segment_map, manifest, secondary_index=0)
     return original_time + manifest["overlap"]["primary_start"] - sec["sync_offset"]
 ```
 
-#### Step 2: Detect face position (primary only)
+#### Step 2: Detect face position per section (primary only)
 
-Use OpenCV's Haar cascade face detector to find the average face center across sampled frames on the **primary** video. Face detection is only needed for the primary — secondary angle sections are rendered full-frame with no zoom or face-centering.
+Use OpenCV's Haar cascade face detector to find where the face is **in each section** of the **primary** video. A single clip-wide average fails when the speaker leans or shifts — the crop stays where the face used to be and cuts it off. Face detection is only needed for primary sections — secondary angle sections are rendered full-frame with no zoom or face-centering.
+
+Haar cascades also fire on glasses lenses and ears. Those false positives are much smaller than the real face (about 1/3 the width), so filter by size against the clip-wide median before taking per-section medians.
 
 ```python
-import cv2
+import cv2, statistics
+
+SAMPLE_EVERY = 0.5      # seconds between samples within a section
+MIN_SAMPLES = 5         # per section, even for short sections
+MIN_HITS = 2            # fewer kept detections than this -> borrow a neighbor's position
+DEAD_BAND = 0.02        # ignore section-to-section shifts under 2% of frame width (avoids micro-jumps)
 
 cap = cv2.VideoCapture(video)
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+fps = cap.get(cv2.CAP_PROP_FPS)
 
 face_cascade = cv2.CascadeClassifier(
     cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
 )
 
-face_centers = []
-sample_points = [int(total_frames * i / 10) for i in range(10)]
-
-for frame_idx in sample_points:
-    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+def largest_face(t):
+    """(cx, cy, w, h) of the largest face at time t, in full-resolution pixels, or None."""
+    cap.set(cv2.CAP_PROP_POS_FRAMES, int(t * fps))
     ret, frame = cap.read()
     if not ret:
-        continue
+        return None
     scale = 0.25
     small = cv2.resize(frame, None, fx=scale, fy=scale)
     gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
     faces = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(30, 30))
-    if len(faces) > 0:
-        faces = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)
-        x, y, w, h = faces[0]
-        cx = int((x + w/2) / scale)
-        cy = int((y + h/2) / scale)
-        face_centers.append((cx, cy, int(h / scale)))
+    if len(faces) == 0:
+        return None
+    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+    return ((x + w / 2) / scale, (y + h / 2) / scale, w / scale, h / scale)
 
+# Sample every section (primary sections only in multi-angle mode)
+detections = []
+for section in sections:
+    if section.get("source", "primary") != "primary":
+        detections.append([])
+        continue
+    dur = section["end"] - section["start"]
+    n = max(MIN_SAMPLES, int(dur / SAMPLE_EVERY))
+    times = [section["start"] + (k + 0.5) * dur / n for k in range(n)]
+    detections.append([f for f in (largest_face(t) for t in times) if f])
 cap.release()
 
-# Average face position, or frame center as fallback.
-# face_h (median face box height) is used by portrait mode to keep the top of the head in frame.
-if face_centers:
-    face_cx = int(sum(c[0] for c in face_centers) / len(face_centers))
-    face_cy = int(sum(c[1] for c in face_centers) / len(face_centers))
-    face_h = int(sorted(c[2] for c in face_centers)[len(face_centers) // 2])
+# Clip-wide medians, used to reject false positives and as the last-resort fallback
+all_faces = [f for faces in detections for f in faces]
+if all_faces:
+    med_cx = statistics.median(f[0] for f in all_faces)
+    med_cy = statistics.median(f[1] for f in all_faces)
+    med_w = statistics.median(f[2] for f in all_faces)
+    med_h = statistics.median(f[3] for f in all_faces)
 else:
-    face_cx, face_cy = width // 2, height // 2
-    face_h = height // 3
+    med_cx, med_cy, med_w, med_h = width / 2, height / 2, height / 3, height / 3
+
+def is_real_face(f):
+    # Too small = glasses lens / ear; too far from the median = background false positive
+    return (f[2] >= 0.6 * med_w
+            and abs(f[0] - med_cx) <= 0.30 * width
+            and abs(f[1] - med_cy) <= 0.30 * height)
+
+kept = [[f for f in faces if is_real_face(f)] for faces in detections]
+
+# Per-section face position: median of that section's real detections
+section_faces = []
+for faces in kept:
+    if len(faces) >= MIN_HITS:
+        section_faces.append({
+            "cx": int(statistics.median(f[0] for f in faces)),
+            "cy": int(statistics.median(f[1] for f in faces)),
+            "h": int(statistics.median(f[3] for f in faces)),
+        })
+    else:
+        section_faces.append(None)
+
+# Sections without enough detections borrow the nearest section's position (previous first)
+for i, face in enumerate(section_faces):
+    if face is None:
+        neighbors = [section_faces[j] for j in list(range(i - 1, -1, -1)) + list(range(i + 1, len(section_faces)))
+                     if section_faces[j] is not None and len(kept[j]) >= MIN_HITS]
+        section_faces[i] = dict(neighbors[0]) if neighbors else {"cx": int(med_cx), "cy": int(med_cy), "h": int(med_h)}
+
+# Dead band: a tiny shift between consecutive sections reads as a jump, not a reframe
+for i in range(1, len(section_faces)):
+    if abs(section_faces[i]["cx"] - section_faces[i - 1]["cx"]) < DEAD_BAND * width:
+        section_faces[i]["cx"] = section_faces[i - 1]["cx"]
 ```
 
-**Outlier filtering**: If a detected face center is more than 30% of frame width/height away from the median, discard it as a false positive before averaging.
+For each section in Step 3, use that section's `face_cx = section_faces[i]["cx"]`, `face_cy = section_faces[i]["cy"]`, and `face_h = section_faces[i]["h"]` (face box height, used by portrait mode to keep the top of the head in frame).
+
+Do not pan within a section. Frame-to-frame Haar detections jump by hundreds of pixels, so a crop that follows them wobbles. One stable position per section, cut at the section boundary, reads as an intentional reframe.
 
 #### Step 3: Build ffmpeg filter
 
@@ -290,8 +337,8 @@ Scale targets:
 Key details:
 - Primary video: `trim` -> `setpts` -> `crop` -> `scale` (lanczos)
 - Secondary video: `trim` (with mapped timestamps) -> `setpts` -> `scale` (lanczos) — no crop
-- Audio: always from input 0 — `atrim` (with trimmed primary timestamps) -> `asetpts`
-- Concat inputs must be interleaved: `[v0][a0][v1][a1]...`
+- Audio: never cut — map the full primary track with `-map 0:a` (see above)
+- Concat is video-only: `[v0][v1]...concat=n=N:v=1:a=0[outv]`
 - Write the filter to a temp file since it's too long for command line. Use a PID-unique filename (e.g., `/tmp/zoom_filter_{os.getpid()}.txt`) to avoid collisions with concurrent runs. Delete the temp file after ffmpeg completes.
 
 #### Step 4: Render with ffmpeg
@@ -325,7 +372,7 @@ Note: Use `-/filter_complex <file>` to pass the filter from a file (ffmpeg 7.0+)
 Print:
 - Original video dimensions
 - Output dimensions (source resolution for landscape, 1080x1920 for portrait)
-- Face center position used
+- Clip-wide median face center, and each section's face center (flag sections that borrowed a neighbor's position)
 - Number of sections rendered and label distribution
 - For multi-angle: number of secondary sections and the timestamp mapping used
 - Output file path and duration
@@ -336,7 +383,7 @@ Print:
 - **Portrait zoom**: crops a 9:16 slice from the 16:9 source using height fractions 1.0 / 0.92 / 0.85 (locked). The crop never cuts off the top of the head; zooms push in from the bottom. The output is always 1080x1920.
 - All sections must be continuous (no gaps) and cover the full video duration.
 - For landscape, the output maintains the original video resolution (e.g., 3840x2160). For portrait, output is always 1080x1920.
-- Face detection uses 10 sample frames spread across the video. This assumes a relatively stationary speaker (talking head format). For videos with significant movement, more sophisticated per-section face tracking would be needed.
+- Face position is detected **per section** (samples every 0.5s, size-filtered to reject glasses/ear false positives, median per section). The crop is fixed within a section and reframes at section boundaries. If the speaker's face is wider than the crop (portrait critical when sitting close to the camera), centering can only balance the trim on both sides — it cannot fit the whole face.
 - Portrait mode assumes the source is landscape (16:9). If the source is already portrait or square, skip the portrait crop and just scale to 1080x1920.
 - **Multi-angle sections get no zoom.** Secondary camera sections are rendered full-frame, scaled to the output resolution. The visual variety comes from the angle change itself, not from a zoom effect. Only primary camera sections (emphasis and critical) get the zoom crop.
 - **Audio is always from the primary.** Even when the picture comes from a secondary camera, the audio track comes from input 0 (the primary with the quality mic). Secondary video files have no audio track.

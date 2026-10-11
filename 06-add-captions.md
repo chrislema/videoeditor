@@ -22,7 +22,7 @@ The user may optionally specify:
 - **input**: Path to the video file (if not provided, ask)
 - **output**: Path for the output file. When called from `/process-video`, the pipeline passes `<name>_final.mp4` as the output path. When run standalone, default: strip `_mastered` from the input basename, then append `_final.mp4` — e.g., `mainvideo_mastered.mp4` → `mainvideo_final.mp4`.
 - **resolution**: `-HD` (1920x1080), `-4K` (keep source), or `-portrait` (1080x1920). Default: `-HD`
-- **max_words**: Maximum words per caption line (default: 6 for landscape, 3 for portrait)
+- **max_words**: Maximum words per caption line (default: 4; longer captions stack into balanced lines)
 - **target_width**: Target percentage of video width for text (default: 80%)
 - **box_opacity**: Opacity of the black background box, 0.0-1.0 (default: 0.70, meaning 30% transparent)
 
@@ -125,9 +125,42 @@ Parse the `[HH:MM:SS.mmm --> HH:MM:SS.mmm] text` lines from output.
 #### Step 3: Build caption events
 
 - Each whisper segment becomes **one caption event** — do NOT split a segment into sub-chunks with fabricated timestamps. Splitting a 15s segment into three 5s chunks assumes even pacing, but speech is not evenly paced. This causes cumulative drift, and by the end of the video captions will lag behind or overshoot the audio.
-- If a whisper segment has more words than the per-line max (6 landscape, 3 portrait), display all the words using **stacked lines** within that single caption event's time window. Use multiple drawtext filters at offset y-positions (see Step 5), all sharing the same `enable` time range. Never split the time.
-- Convert all text to UPPERCASE
+- If a whisper segment has more words than the per-line max (4), display all the words using **stacked lines** within that single caption event's time window. Use multiple drawtext filters at offset y-positions (see Step 5), all sharing the same `enable` time range. Never split the time.
 - Each segment's start/end time comes directly from whisper — trust these timestamps
+- Clean the text before rendering (see `clean_events` below):
+  - **Rejoin split contractions.** Whisper's `-ml` can break a contraction across segments ("YOU" | "'VE STARTED NOTICING"). Glue the tail back onto the previous caption's last word; leave both timestamps alone.
+  - **Fix mis-heard names** with the same corrections the transcript step uses (e.g. "chat GBT" → "ChatGPT"). Add to `NAME_FIXES` whenever a new one shows up.
+  - **Drop leading punctuation.** Whisper sometimes starts a segment with the previous clause's comma (", TONS OF RESEARCH").
+- Convert all text to UPPERCASE after cleaning
+
+```python
+import math, re
+
+# Mis-heard names: keep in step with the transcript cleanup in /process-video Step 6.5
+NAME_FIXES = [
+    (r"\bchat\s*g[bp]t\b", "ChatGPT"),
+    (r"\bdigital\s+advisors\b", "Digital Advisors"),
+]
+CONTRACTION_TAIL = re.compile(r"^(n?'(?:s|t|m|re|ve|ll|d))\b\s*", re.I)
+
+def clean_events(raw_events):
+    """raw_events: [(start, end, text)] straight from whisper. Returns cleaned caption events."""
+    events = []
+    for start, end, text in raw_events:
+        text = text.strip().replace("\u2019", "'")
+        m = CONTRACTION_TAIL.match(text)
+        if m and events:
+            prev_start, prev_end, prev_text = events[-1]
+            text = text[m.end():]
+            # If the segment was only the contraction tail, the previous caption absorbs its time too
+            events[-1] = (prev_start, prev_end if text else end, prev_text + m.group(1))
+        text = text.lstrip(",.;:!? ")
+        for pattern, fix in NAME_FIXES:
+            text = re.sub(pattern, fix, text, flags=re.I)
+        if text:
+            events.append((start, end, text))
+    return [(start, end, text.upper()) for start, end, text in events]
+```
 
 #### Step 4: Determine target dimensions and calculate font size
 
@@ -160,9 +193,10 @@ Each caption event becomes a separate `drawtext` filter with `enable='between(t,
 
 ```python
 def escape_drawtext(text):
-    # Strip characters that cause rendering issues (tofu/box glyphs)
-    text = text.replace("'", "")   # apostrophes — font renders tofu for some quote chars
-    text = text.replace('"', '')
+    # A straight apostrophe would close drawtext's single-quoted text value; the typographic
+    # apostrophe (U+2019) renders correctly in Big Shoulders, so DON'T renders as DON’T
+    text = text.replace("'", "\u2019")
+    text = text.replace('"', '')   # double quotes add nothing to a caption
     # Escape ffmpeg drawtext special characters
     text = text.replace("\\", "\\\\")
     text = text.replace(":", "\\:")
@@ -172,18 +206,25 @@ def escape_drawtext(text):
 
 **Multi-line captions: use stacked drawtext filters, NEVER newlines in text.**
 
-The Big Shoulders Display font renders the newline character (`\n`) as a visible tofu glyph (X-in-a-box) before breaking the line. Instead, split captions with >4 words into separate drawtext filters stacked vertically:
+The Big Shoulders Display font renders the newline character (`\n`) as a visible tofu glyph (X-in-a-box) before breaking the line. Instead, split captions with more than 4 words into separate drawtext filters stacked vertically. Balance the lines so no word is left alone — 5 words stack as 3 + 2, not 4 + 1:
 
 ```python
 line_height = font_size + (box_padding * 2) + 4  # font + box padding + spacing
 
-for start, end, text in caption_events:
+MAX_WORDS_PER_LINE = 4
+
+def balanced_lines(text):
     words = text.split()
-    # Split into max 4-word lines per directive
-    if len(words) > 4:
-        lines = [" ".join(words[i:i+4]) for i in range(0, len(words), 4)]
-    else:
-        lines = [text]
+    n_lines = math.ceil(len(words) / MAX_WORDS_PER_LINE)
+    sizes = [len(words) // n_lines + (1 if i < len(words) % n_lines else 0) for i in range(n_lines)]
+    lines, i = [], 0
+    for size in sizes:
+        lines.append(" ".join(words[i:i + size]))
+        i += size
+    return lines
+
+for start, end, text in clean_events(whisper_segments):
+    lines = balanced_lines(text)
 
     # Stack lines centered around y_position
     total_h = len(lines) * line_height
@@ -245,7 +286,9 @@ ffmpeg -y -i <input> \
 - **Color**: White text
 - **Background**: Black box at 70% opacity (30% transparent), sized to fit the text
 - **Position**: Centered horizontally. Landscape: 80% of video height. Portrait: 75% of video height (higher to avoid mobile thumb zone).
-- **Max words per line**: 6 (landscape) / 3 (portrait)
+- **Words per caption**: ~6 (landscape, `-ml 35`) / ~3 (portrait, `-ml 20`), set by whisper's segment length
+- **Max words per line**: 4 — longer captions stack into balanced lines
+- **Apostrophes**: kept, rendered as the typographic apostrophe (’)
 - **Target width**: ~80% of video width
 - **Font size multiplier**: Landscape: `target_width * 0.0495`. Portrait: `target_width * 0.065` (larger relative to narrow frame).
 
