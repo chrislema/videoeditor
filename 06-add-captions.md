@@ -230,7 +230,7 @@ Write the full filter chain to the temp file, then render:
 
 ```bash
 ffmpeg -y -i <input> \
-  -filter_complex_script /tmp/caption_filter_$$.txt \
+  -/filter_complex /tmp/caption_filter_$$.txt \
   -c:v libx264 -preset fast -crf 18 \
   -c:a copy \
   <output>

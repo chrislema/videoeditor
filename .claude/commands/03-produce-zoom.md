@@ -271,7 +271,7 @@ The video concat builds the video-only stream. For audio, map the entire primary
 
 ```bash
 ffmpeg -y -i <primary_trimmed> -i <secondary> \
-  -filter_complex_script /tmp/zoom_filter_$$.txt \
+  -/filter_complex /tmp/zoom_filter_$$.txt \
   -map "[outv]" -map "0:a" \        # <-- full primary audio, no cutting
   -c:v libx264 -preset fast -crf 18 \
   -c:a aac -b:a 192k \
@@ -299,7 +299,7 @@ Key details:
 **Single-angle:**
 ```bash
 ffmpeg -y -i <input> \
-  -filter_complex_script /tmp/zoom_filter_$$.txt \
+  -/filter_complex /tmp/zoom_filter_$$.txt \
   -map "[outv]" -map "0:a" \
   -c:v libx264 -preset fast -crf 18 \
   -c:a aac -b:a 192k \
@@ -309,7 +309,7 @@ ffmpeg -y -i <input> \
 **Multi-angle** — pass all video files as inputs. The primary is input 0, and secondaries are inputs 1, 2, etc. Secondary file paths come from the sync manifest (the original, untrimmed secondary files):
 ```bash
 ffmpeg -y -i <primary_trimmed> -i <secondary_1_original> [-i <secondary_2_original>] \
-  -filter_complex_script /tmp/zoom_filter_$$.txt \
+  -/filter_complex /tmp/zoom_filter_$$.txt \
   -map "[outv]" -map "0:a" \
   -c:v libx264 -preset fast -crf 18 \
   -c:a aac -b:a 192k \
@@ -318,7 +318,7 @@ ffmpeg -y -i <primary_trimmed> -i <secondary_1_original> [-i <secondary_2_origin
 
 **Important**: Always use `-map "0:a"` to pass the full primary audio track through uncut. Never use per-section `atrim`/`concat` for audio — it causes cumulative sync drift.
 
-Note: Use `-filter_complex_script <file>` to pass the filter from a file — this works across all ffmpeg versions. (ffmpeg 8.x+ also accepts `-/filter_complex <file>` as shorthand.)
+Note: Use `-/filter_complex <file>` to pass the filter from a file (ffmpeg 7.0+). ffmpeg 9 removed the older `-filter_complex_script` option; only fall back to it on ffmpeg 6.x and earlier.
 
 #### Step 5: Report results
 

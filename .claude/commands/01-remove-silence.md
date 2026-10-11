@@ -47,7 +47,7 @@ The user may optionally specify:
      [v0][a0][v1][a1]...concat=n=N:v=1:a=1[outv][outa]
      ```
    - Write the filter to a PID-unique temp file (e.g., `/tmp/silence_filter_{pid}.txt`)
-   - Render: `ffmpeg -y -i <input> -filter_complex_script <filter_file> -map "[outv]" -map "[outa]" -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k <output>`
+   - Render: `ffmpeg -y -i <input> -/filter_complex <filter_file> -map "[outv]" -map "[outa]" -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 192k <output>`
    - Delete the temp filter file after rendering
 
 5. **Write segment map** JSON file alongside the trimmed output. The segment map records which time ranges from the input were kept, enabling downstream timestamp mapping (e.g., for produce-zoom to map trimmed timestamps back to original file timestamps).
@@ -142,7 +142,7 @@ with open(filter_file, "w") as f:
 # Render with re-encoding (frame-accurate, no keyframe drift)
 subprocess.run([
     "ffmpeg", "-y", "-i", video,
-    "-filter_complex_script", filter_file,
+    "-/filter_complex", filter_file,
     "-map", "[outv]", "-map", "[outa]",
     "-c:v", "libx264", "-preset", "fast", "-crf", "18",
     "-c:a", "aac", "-b:a", "192k",
