@@ -139,7 +139,7 @@ import math, re
 # Mis-heard names: keep in step with the transcript cleanup in /process-video Step 6.5
 NAME_FIXES = [
     (r"\bchat\s*g[bp]t\b", "ChatGPT"),
-    (r"\bdigital\s*advisors\s*\.\s*ai\b", "digitaladvisors.ai"),
+    (r"\bdigital\s*advisors\s*(?:\.|\s+dot\s+)\s*ai\b", "digitaladvisors.ai"),
     (r"\bdigital\s+advisors\b", "Digital Advisors"),
 ]
 CONTRACTION_TAIL = re.compile(r"^(n?'(?:s|t|m|re|ve|ll|d))\b\s*", re.I)
