@@ -80,10 +80,14 @@ def find_caption_font():
         return None
     out = subprocess.run(["fc-list", "--format", "%{file}|%{family}|%{style}|%{variable}\n"],
                          capture_output=True, text=True).stdout
+    rows = [line.split("|") for line in out.splitlines()]
+    rows = [parts for parts in rows if len(parts) == 4]
+    # fontconfig also lists each named instance of a variable font ("Bold", "Black", ...)
+    # as a non-variable entry, so skip every file that has a variable entry at all
+    variable_files = {parts[0] for parts in rows if parts[3] == "True"}
     matches = {}
-    for line in out.splitlines():
-        parts = line.split("|")
-        if len(parts) != 4 or parts[3] == "True" or "Bold" not in parts[2].split(","):
+    for parts in rows:
+        if parts[0] in variable_files or "Bold" not in parts[2].split(","):
             continue
         for rank, family in enumerate(["Big Shoulders Display", "Big Shoulders"]):
             if family in parts[1].split(","):
